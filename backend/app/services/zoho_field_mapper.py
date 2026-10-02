@@ -83,7 +83,8 @@ class ZohoFieldMapper:
             "Current_Employer", "Current_Job_Title", "Experience_in_Years", "Experience",
             "Skill_Set", "Highest_Qualification", "Candidate_Status", "Source",
             "City", "State", "Country", "Zip_Code", "Current_Salary", "Expected_Salary",
-            "Additional_Info", "Referred_By", "Referred_Date", "Referral_Score",
+            "Additional_Info", "Referred_By", "Referred_by_Employee__s", "Internal_Employee__s",
+            "Referred_Date", "Referral_Score",
             "Referral_Approval_Status", "Referral_Approval_Note",
             "Experience_Details", "Educational_Details"
         ]
@@ -96,6 +97,28 @@ class ZohoFieldMapper:
             if lowered in candidates_meta:
                 return candidates_meta[lowered].get("api_name") or candidate
         return None
+
+    def _sanitize_subform_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        """
+        Defensively validates that subform fields contain only valid scalar types (str, int, float, bool).
+        Strips nested dictionaries, lists, or invalid date values that trigger Zoho INVALID_DATA errors.
+        """
+        sanitized: dict[str, Any] = {}
+        for k, v in row.items():
+            if v is None:
+                continue
+            if isinstance(v, (dict, list)):
+                # Zoho subforms expect scalar fields; discard nested structures like {"from": ..., "to": ...}
+                continue
+            if isinstance(v, bool):
+                sanitized[k] = v
+            elif isinstance(v, (int, float)):
+                sanitized[k] = v
+            elif isinstance(v, str):
+                cleaned = v.strip()
+                if cleaned:
+                    sanitized[k] = cleaned
+        return sanitized
 
     def map_to_zoho_candidate(
         self,
@@ -214,22 +237,34 @@ class ZohoFieldMapper:
                 payload[zip_f] = loc.zip
 
         # 7. Subforms: Experience_Details & Educational_Details if present
+        # In Zoho Recruit v2, 'Work_Duration' and 'Duration' subform fields expect scalar date types (YYYY-MM-DD),
+        # not nested range dicts ({"from": ..., "to": ...}). Passing dicts triggers HTTP 202 INVALID_DATA.
+        # We omit them from subform payloads to ensure clean record creation, and preserve dates in summary text.
         exp_subform_name = self._find_field_name(candidates_meta, "Experience_Details")
         if exp_subform_name and parsed_resume.experience:
             subform_rows = []
             for exp in parsed_resume.experience:
+                summary_parts = []
+                if exp.description:
+                    summary_parts.append(exp.description)
+                dates = []
+                if exp.start_date:
+                    dates.append(exp.start_date)
+                if exp.is_current:
+                    dates.append("Present")
+                elif exp.end_date:
+                    dates.append(exp.end_date)
+                if dates:
+                    summary_parts.append(f"Period: {' - '.join(dates)}")
+
                 row = {
                     "Company": exp.company or "",
                     "Occupation_Title": exp.job_title or "",
-                    "Summary": exp.description or "",
-                    "I_currently_work_here": exp.is_current,
+                    "Summary": " | ".join(summary_parts)[:2000],
+                    "I_currently_work_here": bool(exp.is_current),
                 }
-                if exp.start_date or exp.end_date:
-                    row["Work_Duration"] = {
-                        "from": exp.start_date or "",
-                        "to": exp.end_date or ("Present" if exp.is_current else ""),
-                    }
-                subform_rows.append(row)
+                # Defensively ensure no non-scalar values in subform row
+                subform_rows.append(self._sanitize_subform_row(row))
             if subform_rows:
                 payload[exp_subform_name] = subform_rows
 
@@ -237,15 +272,12 @@ class ZohoFieldMapper:
         if edu_subform_name and parsed_resume.education:
             edu_rows = []
             for edu in parsed_resume.education:
-                edu_rows.append({
+                edu_row = {
                     "Institute_School": edu.institution or "",
                     "Major_Department": edu.field_of_study or "",
                     "Degree": edu.degree or "",
-                    "Duration": {
-                        "from": edu.start_year or "",
-                        "to": edu.end_year or "",
-                    }
-                })
+                }
+                edu_rows.append(self._sanitize_subform_row(edu_row))
             if edu_rows:
                 payload[edu_subform_name] = edu_rows
 
@@ -255,8 +287,10 @@ class ZohoFieldMapper:
         payload[source_field] = "Employee Referral"
 
         # Referred_By
-        referred_by_f = self._find_field_name(candidates_meta, "Referred_By") or "Referred_By"
+        referred_by_f = self._find_field_name(candidates_meta, "Referred_by_Employee__s", "Referred_By", "Internal_Employee__s") or "Referred_by_Employee__s"
         payload[referred_by_f] = employee_email.strip().lower()
+        if referred_by_f != "Referred_By":
+            payload["Referred_By"] = employee_email.strip().lower()
 
         # Referred_Date
         referred_date_f = self._find_field_name(candidates_meta, "Referred_Date") or "Referred_Date"
@@ -275,23 +309,21 @@ class ZohoFieldMapper:
             score_f = self._find_field_name(candidates_meta, "Referral_Score") or "Referral_Score"
             payload[score_f] = round(referral_score, 1)
 
-        # 9. Additional Info for unmapped details
-        unmapped: list[str] = []
+        # 9. Additional Info for unmapped details and guaranteed searchable attribution
+        info_lines: list[str] = [f"[Referred By: {employee_email.strip().lower()}]"]
         if parsed_resume.summary:
-            unmapped.append(f"Summary: {parsed_resume.summary}")
+            info_lines.append(f"Summary: {parsed_resume.summary}")
         if parsed_resume.certifications:
-            unmapped.append(f"Certifications: {', '.join(parsed_resume.certifications)}")
+            info_lines.append(f"Certifications: {', '.join(parsed_resume.certifications)}")
         if parsed_resume.links.linkedin:
-            unmapped.append(f"LinkedIn: {parsed_resume.links.linkedin}")
+            info_lines.append(f"LinkedIn: {parsed_resume.links.linkedin}")
         if parsed_resume.links.github:
-            unmapped.append(f"GitHub: {parsed_resume.links.github}")
+            info_lines.append(f"GitHub: {parsed_resume.links.github}")
         if parsed_resume.notice_period:
-            unmapped.append(f"Notice Period: {parsed_resume.notice_period}")
+            info_lines.append(f"Notice Period: {parsed_resume.notice_period}")
 
-        if unmapped:
-            add_info_f = self._find_field_name(candidates_meta, "Additional_Info")
-            if add_info_f:
-                payload[add_info_f] = "\n".join(unmapped)[:2000]
+        add_info_f = self._find_field_name(candidates_meta, "Additional_Info") or "Additional_Info"
+        payload[add_info_f] = "\n".join(info_lines)[:2000]
 
         return payload, has_mismatch, mismatch_details
 

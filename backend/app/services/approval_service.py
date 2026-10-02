@@ -14,6 +14,7 @@ from app.core.config import get_settings
 from app.services.zoho_service import zoho_service
 from app.services.email_service import email_service
 from app.domain.models import PendingApprovalItem, ApprovalDetailResponse
+from app.api.v1.referral import extract_referred_by, extract_referred_date
 
 logger = logging.getLogger(__name__)
 
@@ -24,20 +25,35 @@ class ApprovalService:
         candidates = await zoho_service.get_all_candidates_cached()
         pending_list: list[PendingApprovalItem] = []
 
+        settings = get_settings()
         for cand in candidates:
-            app_status = (cand.get("Referral_Approval_Status") or "Pending").strip()
-            # If Referral_Approval_Status is pending or missing on an employee referral
-            source = (cand.get("Source") or "").lower()
-            referred_by = cand.get("Referred_By") or ""
+            app_status = (cand.get("Referral_Approval_Status") or "").strip()
+            cand_status = (cand.get("Candidate_Status") or "").strip().lower()
+            if not app_status:
+                if cand_status in (settings.status_on_approval.lower(), "in-review", "approved", settings.status_on_interview_scheduled.lower(), "interview scheduled"):
+                    app_status = "Approved"
+                elif cand_status in (settings.status_on_rejection.lower(), "rejected"):
+                    app_status = "Rejected"
+                else:
+                    app_status = "Pending"
 
-            if (app_status.lower() == "pending" or not app_status) and (referred_by or "referral" in source):
+            # If Referral_Approval_Status is pending on an employee referral
+            source = (cand.get("Source") or "").lower()
+            add_info = str(cand.get("Additional_Info") or "").lower()
+            referred_by = extract_referred_by(cand)
+
+            if app_status.lower() == "pending" and (referred_by or "referral" in source or "referral" in add_info):
                 cand_id = str(cand.get("id", ""))
-                first_name = cand.get("First_Name") or ""
-                last_name = cand.get("Last_Name") or ""
-                name = f"{first_name} {last_name}".strip() or "Unnamed Candidate"
-                email = cand.get("Email") or ""
-                referred_date = cand.get("Referred_Date")
-                score = cand.get("Referral_Score")
+                first_name = str(cand.get("First_Name") or "").strip()
+                last_name = str(cand.get("Last_Name") or "").strip()
+                name = f"{first_name} {last_name}".strip() or str(cand.get("Candidate_Name") or "Candidate").strip()
+                email = str(cand.get("Email") or cand.get("Secondary_Email") or "").strip()
+                referred_date = extract_referred_date(cand)
+                score_val = cand.get("Referral_Score")
+                try:
+                    score = float(score_val) if score_val is not None else 85.0
+                except (ValueError, TypeError):
+                    score = 85.0
 
                 days_pending = 0
                 if referred_date:
@@ -58,6 +74,7 @@ class ApprovalService:
                     PendingApprovalItem(
                         candidate_id=cand_id,
                         name=name,
+                        full_name=name,
                         email=email,
                         referred_by=referred_by,
                         referred_date=referred_date,
@@ -99,16 +116,53 @@ class ApprovalService:
                 has_mismatch = True
                 mismatch_details = content.split("⚠️ IDENTITY MISMATCH WARNING:")[1].split("===")[0].strip()
 
-        approval_status = cand.get("Referral_Approval_Status") or "Pending"
+        settings = get_settings()
+        approval_status = (cand.get("Referral_Approval_Status") or "").strip()
+        if not approval_status:
+            cand_status = (cand.get("Candidate_Status") or "").strip().lower()
+            if cand_status in (settings.status_on_approval.lower(), "in-review", "approved", settings.status_on_interview_scheduled.lower(), "interview scheduled"):
+                approval_status = "Approved"
+            elif cand_status in (settings.status_on_rejection.lower(), "rejected"):
+                approval_status = "Rejected"
+            else:
+                for n in notes:
+                    title = n.get("Note_Title", "")
+                    if title == "Referral Approved":
+                        approval_status = "Approved"
+                        break
+                    elif title == "Referral Rejected":
+                        approval_status = "Rejected"
+                        break
+        if not approval_status:
+            approval_status = "Pending"
+
+        fn = str(cand.get("First_Name") or "").strip()
+        ln = str(cand.get("Last_Name") or "").strip()
+        full_name = f"{fn} {ln}".strip() or str(cand.get("Candidate_Name") or "Candidate").strip()
+        referred_by = extract_referred_by(cand)
+        score_val = cand.get("Referral_Score")
+        try:
+            score = float(score_val) if score_val is not None else 85.0
+        except (ValueError, TypeError):
+            score = 85.0
 
         return ApprovalDetailResponse(
             candidate_id=candidate_id,
+            full_name=full_name,
+            email=str(cand.get("Email") or cand.get("Secondary_Email") or "").strip(),
+            alternate_email=cand.get("Secondary_Email"),
+            phone=cand.get("Phone") or cand.get("Mobile"),
+            candidate_status=str(cand.get("Candidate_Status") or "New").strip(),
+            approval_status=approval_status,
+            referred_by=referred_by,
+            referred_date=extract_referred_date(cand),
+            referral_score=score,
+            identity_mismatch=has_mismatch,
+            has_identity_mismatch=has_mismatch,
+            identity_mismatch_details=mismatch_details,
             candidate=cand,
             parsed_profile=parsed_profile,
             match_details=None,
-            has_identity_mismatch=has_mismatch,
-            identity_mismatch_details=mismatch_details,
-            approval_status=approval_status,
         )
 
     async def approve_referral(
@@ -143,7 +197,7 @@ class ApprovalService:
         await zoho_service.add_note(candidate_id, "Referral Approved", audit_note)
 
         # Notify referring employee
-        employee_email = cand.get("Referred_By")
+        employee_email = extract_referred_by(cand)
         if employee_email:
             cand_name = f"{cand.get('First_Name', '')} {cand.get('Last_Name', '')}".strip() or "Candidate"
             await self._notify_employee_decision(
@@ -189,7 +243,7 @@ class ApprovalService:
         audit_note = f"Referral Rejected by {recruiter_email}.\nNote: {note or 'No note provided.'}"
         await zoho_service.add_note(candidate_id, "Referral Rejected", audit_note)
 
-        employee_email = cand.get("Referred_By")
+        employee_email = extract_referred_by(cand)
         if employee_email:
             cand_name = f"{cand.get('First_Name', '')} {cand.get('Last_Name', '')}".strip() or "Candidate"
             await self._notify_employee_decision(

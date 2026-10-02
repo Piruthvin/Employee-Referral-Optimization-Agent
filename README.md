@@ -44,8 +44,12 @@ An enterprise-grade, AI-driven Employee Referral & Recruitment Operations platfo
 
 ## 2. Key Architectural Decisions
 - **Zero Database / Zero Blob Storage**: Zoho Recruit is the single source of truth. Candidates are stored in the Candidates module, resumes in candidate attachments, and full parsed JSON profiles in candidate notes.
-- **Zoho Active Users Authentication**: Roles (`employee`, `recruiter`, `hiring_manager`) are dynamically derived from Zoho Recruit Users (`Setup -> Users`). No arbitrary role selector. No legacy Contacts module or tenure restrictions.
-- **Stateless OTP Authentication**: Login uses email challenge tokens signed via HMAC-SHA256 with 5-attempt windows. One-time codes are sent via Microsoft Graph and never stored in memory or databases.
+- **Zoho Active Users Authentication**: Roles (`employee`, `recruiter`, `hiring_manager`) are dynamically derived from real-time Zoho Recruit Users (`Setup -> Users`). All authentications query the live Zoho directory (`zoho_users_source: live`). If Zoho is unreachable, the system fails cleanly with HTTP 503 instead of falling back to stale mock users.
+- **Supported Authentication Modes**:
+  - **Mode 1 (`email_only` - Development Convenience)**: User enters their email; backend queries live Zoho Recruit active users. If active, grants an immediate session JWT with their Zoho-derived role. Strictly prohibited in production (`APP_ENV=production` refuses startup if `AUTH_MODE=email_only`).
+  - **Mode 2 (`otp` - Production Standard)**: User enters their email; backend verifies the user in live Zoho Recruit active users, generates a 6-digit OTP, and dispatches it via Microsoft Graph `sendMail`. The OTP is verified against an HMAC-signed challenge token before issuing a session JWT.
+  - **Technical Limitation — "Check against Zoho's Real Password"**: Zoho Recruit's user account password (used to log into Zoho accounts) is **not accessible or verifiable via the Zoho Recruit REST API v2**. By design, Zoho Recruit uses OAuth 2.0 delegated authorization; no SaaS vendor exposes API endpoints to verify third-party credentials against their master user database. An alternative if passwords are required is an independent, backend-owned salted hash credential store (bcrypt/Argon2) maintained separately from Zoho.
+- **Stateless OTP Security**: Login uses email challenge tokens signed via HMAC-SHA256 with 5-attempt windows. One-time codes are sent via Microsoft Graph and never stored in memory or databases.
 - **No Functions Proxy**: The FastAPI backend communicates directly with the iGentic executor and relays real-time Server-Sent Events (SSE) to the frontend.
 - **Strict Recruiter Gate**: Interview scheduling is blocked (HTTP 409) until candidate referral approval state is `Approved`.
 - **Compensating Rollbacks**: If candidate creation succeeds in Zoho but attachment upload fails, the candidate is automatically rolled back to prevent orphaned records.
@@ -158,12 +162,13 @@ python scripts/verify_zoho_setup.py
 Configure Microsoft Graph application permissions and PowerShell Application Access Policy so the app can create online meetings on behalf of `MS_ORGANIZER_UPN`. Follow the step-by-step instructions in `docs/TEAMS_SETUP.md`.
 
 ### Step 6: Create iGentic Agents & Tools
-Configure the Multi-Agent Chat app and standalone Resume Parser app using the prompts and tool schemas in:
+Configure ONE single iGentic app with three participants (`Referral_Agent`, `Analytics_Agent`, `Resume_Parser_Agent`) coordinated by `Group_Chat_Manager` using the prompts and tool schemas in:
 - `agent-prompts/Group_Chat_Manager.md`
 - `agent-prompts/Referral_Agent.md`
 - `agent-prompts/Analytics_Agent.md`
 - `agent-prompts/Resume_Parser_Agent.md`
 - `agent-prompts/TOOLS_CONFIG.md`
+*(Only ONE set of `IGENTIC_*` credentials and ONE executor URL is needed).*
 
 ---
 

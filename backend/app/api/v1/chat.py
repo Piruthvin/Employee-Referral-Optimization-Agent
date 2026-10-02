@@ -73,14 +73,23 @@ async def chat_sync(
             detail="Chat message cannot be empty.",
         )
 
-    result = await igentic_client.call_sync(
-        user_message=req.message,
-        session_id=req.conversation_id,
-        user_email=user_email,
-        user_role=user_role,
-    )
+    try:
+        result = await igentic_client.call_sync(
+            user_message=req.message,
+            session_id=req.conversation_id,
+            user_email=user_email,
+            user_role=user_role,
+        )
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("Chat upstream execution error: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The upstream AI agent service is currently unavailable or authentication failed. Please check credentials or retry later.",
+        )
 
     return ChatResponse(
         response=result["response"],
         conversation_id=result.get("conversation_id"),
     )
+

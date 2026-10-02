@@ -5,11 +5,15 @@ Handles thread-safe caching, proactive refresh before expiry, and forced invalid
 
 import time
 import asyncio
+import json
 import logging
+from pathlib import Path
 import httpx
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+CACHE_FILE = Path(__file__).resolve().parent.parent.parent / "tmp" / "zoho_token_cache.json"
 
 
 class ZohoAuthManager:
@@ -24,6 +28,11 @@ class ZohoAuthManager:
         """Forces the cached token to be considered expired, triggering refresh on next call."""
         self._access_token = None
         self._token_expiry = 0.0
+        try:
+            if CACHE_FILE.exists():
+                CACHE_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
         logger.info("Zoho access token cache invalidated.")
 
     async def get_access_token(self, client: httpx.AsyncClient | None = None) -> str:
@@ -31,9 +40,23 @@ class ZohoAuthManager:
         Retrieves a valid Zoho access token, refreshing if missing or expiring within 60s.
         """
         now = time.time()
-        # Fast path if valid with 60 second buffer
+        # Fast path if valid with 60 second buffer in memory
         if self._access_token and now < (self._token_expiry - 60):
             return self._access_token
+
+        # Check local disk cache across processes
+        if not self._access_token and CACHE_FILE.exists():
+            try:
+                cached_data = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
+                cached_tok = cached_data.get("access_token")
+                cached_exp = float(cached_data.get("token_expiry", 0))
+                if cached_tok and now < (cached_exp - 60):
+                    self._access_token = cached_tok
+                    self._token_expiry = cached_exp
+                    return self._access_token
+            except Exception:
+                pass
+
 
         async with self._lock:
             # Double-check inside lock
@@ -75,8 +98,17 @@ class ZohoAuthManager:
                 expires_in = int(resp_data.get("expires_in", 3600))
                 self._access_token = access_token
                 self._token_expiry = time.time() + expires_in
+                try:
+                    CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+                    CACHE_FILE.write_text(
+                        json.dumps({"access_token": self._access_token, "token_expiry": self._token_expiry}),
+                        encoding="utf-8",
+                    )
+                except Exception:
+                    pass
                 logger.info("Successfully refreshed Zoho access token, valid for %d seconds.", expires_in)
                 return self._access_token
+
             finally:
                 if created_client and http_client:
                     await http_client.aclose()

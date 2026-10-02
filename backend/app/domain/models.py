@@ -17,6 +17,12 @@ class LoginResponse(BaseModel):
     message: str
     challenge_token: str | None = None
     auth_mode: str = "otp"
+    access_token: str | None = None
+    role: str | None = None
+    email: str | None = None
+    name: str | None = None
+    zoho_user_id: str | None = None
+    user: dict[str, Any] | None = None
 
 
 class VerifyRequest(BaseModel):
@@ -32,6 +38,7 @@ class VerifyResponse(BaseModel):
     email: str
     name: str
     zoho_user_id: str
+    user: dict[str, Any] | None = None
 
 
 class UserMeResponse(BaseModel):
@@ -78,13 +85,15 @@ class ReferralStatusResponse(BaseModel):
 
 class ReferralListItem(BaseModel):
     candidate_id: str
-    name: str
-    email: str
-    referred_by: str
-    referred_date: str | None = None
-    approval_status: str
-    candidate_status: str
-    referral_score: float | None = None
+    name: str = ""
+    full_name: str = ""
+    email: str = ""
+    referred_by: str = ""
+    referred_date: str = ""
+    approval_status: str = "Pending"
+    candidate_status: str = "New"
+    referral_score: float = 0.0
+    best_match: dict[str, Any] | None = None
     best_match_title: str | None = None
 
 
@@ -97,7 +106,8 @@ class ReferralListResponse(BaseModel):
 
 class PendingApprovalItem(BaseModel):
     candidate_id: str
-    name: str
+    name: str = ""
+    full_name: str = ""
     email: str
     referred_by: str
     referred_date: str | None = None
@@ -112,12 +122,22 @@ class PendingApprovalItem(BaseModel):
 
 class ApprovalDetailResponse(BaseModel):
     candidate_id: str
-    candidate: dict[str, Any]
-    parsed_profile: dict[str, Any] | None = None
-    match_details: dict[str, Any] | None = None
+    full_name: str = ""
+    email: str = ""
+    alternate_email: str | None = None
+    phone: str | None = None
+    candidate_status: str = "New"
+    approval_status: str = "Pending"
+    approval_note: str | None = None
+    referred_by: str = ""
+    referred_date: str | None = None
+    referral_score: float | None = None
+    identity_mismatch: bool = False
     has_identity_mismatch: bool = False
     identity_mismatch_details: str | None = None
-    approval_status: str
+    candidate: dict[str, Any] = Field(default_factory=dict)
+    parsed_profile: dict[str, Any] | None = None
+    match_details: dict[str, Any] | None = None
 
 
 class ApproveRejectRequest(BaseModel):
@@ -175,9 +195,12 @@ class JobOpeningsResponse(BaseModel):
 
 class EmployeePointsResponse(BaseModel):
     email: str
-    referral_count: int
-    approved_count: int
-    points: int
+    employee_email: str = ""
+    referral_count: int = 0
+    total_referrals: int = 0
+    approved_count: int = 0
+    approved_referrals: int = 0
+    points: int = 0
     points_per_referral: int = 10
 
 
@@ -193,7 +216,9 @@ class InterviewScheduleRequest(BaseModel):
     candidate_id: str = Field(..., description="Candidate ID (must be in Approved status)")
     start_time: str = Field(..., description="ISO 8601 string for interview start time (e.g. 2026-10-05T14:00:00Z)")
     duration_minutes: int = Field(default=60, ge=15, le=240, description="Interview duration in minutes")
+    interviewer_email: str | None = Field(default=None, description="Optional interviewer email from UI")
     interviewer_emails: list[str] | None = Field(default=None, description="Optional extra interviewer email addresses")
+    subject: str | None = Field(default=None, description="Interview meeting subject")
     notes: str | None = Field(default=None, description="Optional interview agenda or recruiter notes")
     requester_email: str | None = Field(default=None, description="Requester email for X-Agent-Key tool calls")
 
@@ -211,9 +236,12 @@ class InterviewScheduleResponse(BaseModel):
 # ── Notifications Models ──────────────────────────────────────────────────────
 
 class EmailNotificationRequest(BaseModel):
-    to_email: str = Field(..., description="Recipient email address")
+    to_email: str | None = Field(default=None, description="Recipient email address")
+    recipient_email: str | None = Field(default=None, description="Recipient email address (alias)")
     subject: str = Field(..., description="Email subject")
-    message: str = Field(..., description="Email body content (markdown or plain text)")
+    message: str | None = Field(default=None, description="Email body content (markdown or plain text)")
+    body_html: str | None = Field(default=None, description="HTML email content")
+    body_text: str | None = Field(default=None, description="Plain text fallback email content")
     requester_email: str | None = Field(default=None, description="Requester email for agent tool auth")
 
 
@@ -235,6 +263,12 @@ class DashboardMetricsResponse(BaseModel):
     avg_approval_days: float
 
 
+class FunnelStageItem(BaseModel):
+    stage: str
+    count: int
+    conversion_from_previous: float
+
+
 class ConversionMetricsResponse(BaseModel):
     total_referrals: int
     approved: int
@@ -243,12 +277,15 @@ class ConversionMetricsResponse(BaseModel):
     referral_to_approved_percent: float
     approved_to_interview_percent: float
     overall_hire_conversion_percent: float
+    funnel_stages: list[FunnelStageItem] = Field(default_factory=list)
+    overall_hire_rate: float = 0.0
 
 
 class PendingReferralsResponse(BaseModel):
     count: int
     threshold_days: int
     referrals: list[dict[str, Any]]
+    overdue_referrals: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ReferralTrendsResponse(BaseModel):

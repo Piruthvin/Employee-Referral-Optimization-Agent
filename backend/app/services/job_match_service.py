@@ -1,12 +1,14 @@
-"""
-Deterministic Python Job Matching Service.
-Matches parsed candidate skills and experience against active Zoho Recruit job openings.
-Calculates match percentage, matched skills, missing skills, and experience fit.
-"""
-
+import json
+import logging
 import re
-from typing import Any
+from typing import Any, Tuple
+
+from app.core.config import get_settings
+from app.domain.models import JobMatchResponse, JobMatchResult
+from app.services.igentic_client import igentic_client
 from app.services.resume_parser_python import TECH_SKILLS, SKILL_ALIASES
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_skill(skill: str) -> str:
@@ -153,5 +155,234 @@ class JobMatchService:
         results.sort(key=lambda x: (x["match_percent"], x["experience_fit"]), reverse=True)
         return results
 
+    @classmethod
+    def _unmarshal_json(cls, raw_output: Any) -> Any:
+        """
+        Robustly parses JSON from LLM agent output.
+        Handles dict/list, markdown code fences, and conversational prose.
+        """
+        if isinstance(raw_output, (dict, list)):
+            return raw_output
+
+        if not isinstance(raw_output, str):
+            raise ValueError(f"Expected JSON string, dict, or list, got {type(raw_output).__name__}")
+
+        cleaned = raw_output.strip()
+
+        # 1. Strip markdown code fences if present
+        if "```" in cleaned:
+            fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned, re.IGNORECASE)
+            if fence_match:
+                cleaned = fence_match.group(1).strip()
+
+        # 2. Direct JSON parse
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            pass
+
+        # 3. Find first JSON object or array
+        obj_match = re.search(r"(\{[\s\S]*\}|\[[\s\S]*\])", cleaned)
+        if obj_match:
+            try:
+                return json.loads(obj_match.group(1))
+            except json.JSONDecodeError:
+                pass
+
+        raise ValueError("Could not parse valid JSON from agent job matching response.")
+
+    @classmethod
+    def _validate_and_reconcile_matches(
+        cls,
+        data: Any,
+        open_jobs: list[dict[str, Any]],
+        min_match: int = 0,
+    ) -> list[dict[str, Any]] | None:
+        """
+        Validates unmarshaled agent data against JobMatchResult schema.
+        Ensures job_id, job_title, match_percent, matched_skills, missing_skills, experience_fit.
+        """
+        raw_items: list[Any] = []
+        if isinstance(data, list):
+            raw_items = data
+        elif isinstance(data, dict):
+            if "matches" in data and isinstance(data["matches"], list):
+                raw_items = data["matches"]
+            elif "ranked_jobs" in data and isinstance(data["ranked_jobs"], list):
+                raw_items = data["ranked_jobs"]
+            elif "job_matches" in data and isinstance(data["job_matches"], list):
+                raw_items = data["job_matches"]
+
+        if not raw_items:
+            return None
+
+        # Build lookup of open jobs by id and title
+        jobs_by_id = {str(j.get("id")): j for j in open_jobs}
+        jobs_by_title = {
+            (j.get("Posting_Title") or j.get("Job_Title") or j.get("Job_Opening_Name") or "").strip().lower(): j
+            for j in open_jobs
+        }
+
+        validated: list[dict[str, Any]] = []
+        for item in raw_items:
+            if not isinstance(item, dict):
+                continue
+
+            job_id = str(item.get("job_id") or "")
+            job_title = str(item.get("job_title") or "")
+
+            # If job_id not directly matched, attempt match by title
+            matched_job = jobs_by_id.get(job_id)
+            if not matched_job and job_title:
+                matched_job = jobs_by_title.get(job_title.strip().lower())
+                if matched_job:
+                    job_id = str(matched_job.get("id"))
+                    job_title = (
+                        matched_job.get("Posting_Title")
+                        or matched_job.get("Job_Title")
+                        or matched_job.get("Job_Opening_Name")
+                        or job_title
+                    )
+
+            if not job_id and open_jobs:
+                # Fallback to first open job if only 1 exists
+                job_id = str(open_jobs[0].get("id"))
+                if not job_title:
+                    job_title = (
+                        open_jobs[0].get("Posting_Title")
+                        or open_jobs[0].get("Job_Title")
+                        or open_jobs[0].get("Job_Opening_Name")
+                        or "Job Opening"
+                    )
+
+            try:
+                pct = float(item.get("match_percent") if item.get("match_percent") is not None else 50.0)
+            except (ValueError, TypeError):
+                pct = 50.0
+
+            matched_skills = item.get("matched_skills")
+            if not isinstance(matched_skills, list):
+                matched_skills = [str(s) for s in matched_skills.split(",")] if isinstance(matched_skills, str) else []
+
+            missing_skills = item.get("missing_skills")
+            if not isinstance(missing_skills, list):
+                missing_skills = [str(s) for s in missing_skills.split(",")] if isinstance(missing_skills, str) else []
+
+            exp_fit = bool(item.get("experience_fit", True))
+            dept = item.get("department")
+            if not dept and matched_job:
+                dept = matched_job.get("Department") or matched_job.get("Department_Name")
+
+            result_obj = JobMatchResult(
+                job_id=job_id,
+                job_title=job_title or "Job Opening",
+                match_percent=round(pct, 1),
+                matched_skills=[str(s) for s in matched_skills],
+                missing_skills=[str(s) for s in missing_skills],
+                experience_fit=exp_fit,
+                department=dept,
+            )
+
+            res_dict = result_obj.model_dump()
+            if res_dict["match_percent"] >= min_match:
+                validated.append(res_dict)
+
+        if not validated:
+            return None
+
+        # Sort descending by match_percent, then experience_fit
+        validated.sort(key=lambda x: (x["match_percent"], x["experience_fit"]), reverse=True)
+        return validated
+
+    @classmethod
+    async def rank_jobs_for_candidate_agent_first(
+        cls,
+        candidate_skills: list[str],
+        candidate_exp_years: float | None,
+        open_jobs: list[dict[str, Any]],
+        candidate_profile: dict[str, Any] | None = None,
+        candidate_id: str | None = None,
+        min_match: int = 0,
+    ) -> Tuple[list[dict[str, Any]], str]:
+        """
+        Matches candidate against open jobs using iGentic Referral_Agent first,
+        with deterministic Python matcher as fallback.
+
+        Returns:
+            (ranked_matches: list[dict[str, Any]], matcher_used: "agent" | "python" | "python_fallback")
+        """
+        settings = get_settings()
+        mode = settings.job_match_mode.lower().strip()
+
+        if mode == "python":
+            logger.info("Using deterministic Python job matcher (mode=python).")
+            res = cls.rank_jobs_for_candidate(candidate_skills, candidate_exp_years, open_jobs, min_match)
+            return res, "python"
+
+        if not open_jobs:
+            return [], "agent" if mode == "agent" else "python"
+
+        # Prepare normalized candidate profile payload
+        profile_payload = dict(candidate_profile or {})
+        if "skills" not in profile_payload:
+            profile_payload["skills"] = candidate_skills
+        if "total_experience_years" not in profile_payload:
+            profile_payload["total_experience_years"] = candidate_exp_years
+
+        # Prepare structured open jobs list for agent
+        jobs_payload = []
+        for j in open_jobs:
+            req_skills = cls.get_job_required_skills(j)
+            req_exp = cls.get_job_required_experience(j)
+            title = j.get("Posting_Title") or j.get("Job_Title") or j.get("Job_Opening_Name") or "Job Opening"
+            desc = j.get("Job_Description") or j.get("Job_Summary") or ""
+            jobs_payload.append({
+                "id": str(j.get("id", "")),
+                "title": title,
+                "department": j.get("Department") or j.get("Department_Name"),
+                "required_skills": req_skills,
+                "required_experience": req_exp,
+                "description": desc[:1000] if desc else "",
+            })
+
+        if mode in ("agent", "auto"):
+            if settings.igentic_executor_url and settings.igentic_app_id:
+                try:
+                    logger.info("Calling iGentic Referral_Agent for job matching via unified executor...")
+                    raw_result = await igentic_client.match_jobs(
+                        candidate_profile=profile_payload,
+                        open_jobs=jobs_payload,
+                        candidate_id=candidate_id,
+                    )
+                    if raw_result:
+                        data_dict = cls._unmarshal_json(raw_result)
+                        matches_list = cls._validate_and_reconcile_matches(data_dict, open_jobs, min_match)
+                        if matches_list is not None:
+                            logger.info(
+                                "Successfully matched %d jobs via iGentic Referral_Agent (top match: %s).",
+                                len(matches_list),
+                                f"{matches_list[0].get('match_percent')}%" if matches_list else "None",
+                            )
+                            return matches_list, "agent"
+                        else:
+                            raise ValueError("Agent response could not be validated into JobMatchResult items.")
+                except Exception as e:
+                    logger.warning("Agent job matcher failed: %s", e)
+                    if mode == "agent":
+                        raise RuntimeError(f"iGentic Referral_Agent job match execution failed: {str(e)}") from e
+            else:
+                if mode == "agent":
+                    raise ValueError(
+                        "JOB_MATCH_MODE=agent configured but IGENTIC_EXECUTOR_URL or "
+                        "IGENTIC_APP_ID is missing."
+                    )
+                logger.info("iGentic executor credentials not configured. Falling back to Python job matcher.")
+
+        # Fallback to deterministic python
+        logger.info("Using deterministic Python job matcher (fallback/auto).")
+        fallback_res = cls.rank_jobs_for_candidate(candidate_skills, candidate_exp_years, open_jobs, min_match)
+        return fallback_res, "python_fallback"
+
 
 job_match_service = JobMatchService()
+

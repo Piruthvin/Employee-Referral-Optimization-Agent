@@ -13,14 +13,19 @@ Provides clear, numbered manual instructions for any missing configuration.
 """
 
 import sys
+import os
 import asyncio
+import urllib.parse
 from pathlib import Path
+import httpx
 
-# Add backend to path
+# Add backend to path and change cwd so Settings loads backend/.env
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT_DIR / "backend"))
+os.chdir(ROOT_DIR / "backend")
 
 from app.core.config import get_settings
+
 from app.infrastructure.zoho_auth import zoho_auth_manager
 from app.services.zoho_service import zoho_service
 from app.services.zoho_users_service import zoho_users_service
@@ -55,23 +60,46 @@ async def run_diagnostics() -> None:
         print(f"    [FAIL] Failed to obtain access token: {e}")
         sys.exit(1)
 
-    # 2. Fetch Candidates module fields metadata
+    # 2. Fetch Candidates module fields metadata directly to detect scope mismatch
     print("\n[*] Querying Candidates module metadata (/settings/fields?module=Candidates)...")
-    fields_meta = await zoho_field_mapper.get_candidate_fields_metadata(force_refresh=True)
-
     results: list[tuple[str, str, str]] = []
     manual_steps: list[str] = []
+
+    settings_scope_ok = False
+    try:
+        url = f"{settings.zoho_recruit_base_url.rstrip('/')}/settings/fields?module=Candidates"
+        token = await zoho_auth_manager.get_access_token()
+        headers = {"Authorization": f"Zoho-oauthtoken {token}", "Accept": "application/json"}
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code == 200:
+                settings_scope_ok = True
+                results.append(("Fields Metadata API (/settings/fields)", "PASS", "Reachable with granted OAuth scope"))
+            elif resp.status_code == 401 and "OAUTH_SCOPE_MISMATCH" in resp.text:
+                results.append(("Fields Metadata API (/settings/fields)", "FAIL", "OAUTH_SCOPE_MISMATCH: Token lacks settings scope"))
+                manual_steps.append(
+                    "Token lacks ZohoRecruit.settings.ALL/setup.ALL scope. "
+                    "Run: python scripts/get_zoho_refresh_token.py to re-authorize and update ZOHO_REFRESH_TOKEN in backend/.env."
+                )
+            else:
+                results.append(("Fields Metadata API (/settings/fields)", "WARN", f"HTTP {resp.status_code}: {resp.text[:100]}"))
+    except Exception as e:
+        results.append(("Fields Metadata API (/settings/fields)", "WARN", str(e)))
+
+    fields_meta = await zoho_field_mapper.get_candidate_fields_metadata(force_refresh=True)
 
     # Check custom fields
     for field_key, meta in REQUIRED_CUSTOM_FIELDS.items():
         field_def = fields_meta.get(field_key)
-        if field_def:
+        if field_def and settings_scope_ok:
             actual_type = str(field_def.get("data_type") or field_def.get("json_type") or "").lower()
             valid_type = any(exp in actual_type for exp in meta["expected_type"])
             if valid_type:
                 results.append((f"Field '{meta['expected_name']}'", "PASS", f"Type: {actual_type}"))
             else:
                 results.append((f"Field '{meta['expected_name']}'", "WARN", f"Expected {meta['expected_type']}, found {actual_type}"))
+        elif field_def:
+            results.append((f"Field '{meta['expected_name']}'", "WARN", "Verified against fallback metadata (live check blocked on scope)"))
         else:
             results.append((f"Field '{meta['expected_name']}'", "FAIL", "Missing custom field"))
             manual_steps.append(
@@ -85,18 +113,20 @@ async def run_diagnostics() -> None:
         pick_values = [p.get("actual_value", p.get("display_value", "")) for p in source_field.get("pick_list_values", [])]
         if any("employee referral" in str(v).lower() for v in pick_values):
             results.append(("Source: 'Employee Referral'", "PASS", "Valid picklist value"))
-        else:
+        elif settings_scope_ok:
             results.append(("Source: 'Employee Referral'", "FAIL", "Missing 'Employee Referral' in picklist"))
             manual_steps.append(
                 "In Setup -> Customization -> Modules -> Candidates -> Edit 'Source' field: "
                 "Add 'Employee Referral' to the picklist values and save."
             )
+        else:
+            results.append(("Source: 'Employee Referral'", "WARN", "Using default picklist fallback"))
     else:
         results.append(("Source field", "WARN", "Source field definition not found in metadata"))
 
     # Check candidate statuses
     status_field = fields_meta.get("candidate_status")
-    if status_field:
+    if status_field and settings_scope_ok:
         status_picks = [p.get("actual_value", p.get("display_value", "")) for p in status_field.get("pick_list_values", [])]
         status_picks_lower = [str(s).lower() for s in status_picks]
 
@@ -114,24 +144,50 @@ async def run_diagnostics() -> None:
                     f"Check Candidate_Status picklist values in Zoho Recruit or adjust {setting_name} in backend/.env to match."
                 )
 
+    # Check Referred_By Search Criteria Query
+    print("\n[*] Validating Candidates/search by Referred_By query syntax...")
+    try:
+        test_criteria = "((Referred_By:equals:verify_diagnostic@example.com))"
+        enc = urllib.parse.quote(test_criteria)
+        search_path = f"Candidates/search?criteria={enc}"
+        s_resp = await zoho_service._request("GET", search_path)
+        if s_resp.status_code in (200, 204):
+            results.append(("Referred_By Search Query", "PASS", "Search by Referred_By accepted by Zoho"))
+        elif s_resp.status_code == 400 and "the field is not available for search" in s_resp.text:
+            results.append(("Referred_By Search Query", "FAIL", "Custom field 'Referred_By' not indexed/searchable in Zoho search API"))
+            manual_steps.append(
+                "In Zoho Recruit -> Setup -> Customization -> Modules -> Candidates: "
+                "Ensure 'Referred_By' is created as a single-line Text field (not a Lookup), placed on the active Candidate layout."
+            )
+        else:
+            results.append(("Referred_By Search Query", "WARN", f"HTTP {s_resp.status_code}: {s_resp.text[:100]}"))
+    except Exception as e:
+        results.append(("Referred_By Search Query", "WARN", str(e)))
+
     # Check Users API
     print("\n[*] Validating Zoho Users API (/users?type=ActiveUsers)...")
     try:
         users = await zoho_users_service.get_active_users(force_refresh=True)
-        results.append(("Users API Connectivity", "PASS", f"{len(users)} active users returned"))
+        if zoho_users_service.users_source == "live":
+            results.append(("Users API Connectivity", "PASS", f"{len(users)} active users returned (Live Zoho Users Directory)"))
+            roles_found = set()
+            for u in users:
+                r = zoho_users_service.derive_user_role(u)
+                if r:
+                    roles_found.add(r)
 
-        roles_found = set()
-        for u in users:
-            r = zoho_users_service.derive_user_role(u)
-            if r:
-                roles_found.add(r)
-
-        if "recruiter" in roles_found and "employee" in roles_found:
-            results.append(("User Role Mapping", "PASS", f"Mapped recruiter and employee users ({', '.join(roles_found)})"))
+            if "recruiter" in roles_found and "employee" in roles_found:
+                results.append(("User Role Mapping", "PASS", f"Mapped recruiter and employee users ({', '.join(roles_found)})"))
+            else:
+                results.append(("User Role Mapping", "WARN", f"Active users only mapped: {roles_found or 'None'}"))
+                manual_steps.append(
+                    "Ensure at least one user has Profile/Role 'Administrator' or 'Recruiter', and at least one user has 'Employee'."
+                )
         else:
-            results.append(("User Role Mapping", "WARN", f"Active users only mapped: {roles_found or 'None'}"))
+            results.append(("Users API Connectivity", "FAIL", "OAUTH_SCOPE_MISMATCH: Operating on registered test directory fallback"))
             manual_steps.append(
-                "Ensure at least one user has Profile/Role 'Administrator' or 'Recruiter', and at least one user has 'Employee'."
+                "Token lacks ZohoRecruit.users.ALL/READ scope. "
+                "Run: python scripts/get_zoho_refresh_token.py to re-authorize with consolidated scopes."
             )
     except Exception as e:
         results.append(("Users API Connectivity", "FAIL", str(e)))
@@ -139,7 +195,6 @@ async def run_diagnostics() -> None:
     # Check Attachments API
     print("\n[*] Checking Attachments API reachability...")
     try:
-        # Check Candidates list first
         cands, _ = await zoho_service.get_all_candidates(page=1, per_page=1)
         if cands:
             test_id = str(cands[0].get("id"))
@@ -163,10 +218,11 @@ async def run_diagnostics() -> None:
     print("=" * 80)
 
     if manual_steps:
-        print("\n⚠️  REQUIRED MANUAL CONFIGURATION STEPS:")
+        print("\n[!] REQUIRED MANUAL CONFIGURATION STEPS:")
         for idx, step in enumerate(manual_steps, 1):
             print(f"  {idx}. {step}")
         print("\nDetailed guide available at docs/ZOHO_SETUP.md")
+
 
     if has_failure:
         print("\n[-] Verification FAILED: Resolve the items marked FAIL above before running in production.\n")

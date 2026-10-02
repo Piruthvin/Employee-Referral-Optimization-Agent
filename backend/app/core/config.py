@@ -49,16 +49,13 @@ class Settings(BaseSettings):
     ms_organizer_upn: str = Field(default="", alias="MS_ORGANIZER_UPN")
     ms_sender_upn: str = Field(default="", alias="MS_SENDER_UPN")
 
-    # iGentic AI Platform (Multi-Agent Chat)
+    # iGentic AI Platform (Unified Multi-Agent App: Group Chat Manager + 3 Participants)
     igentic_executor_url: str = Field(default="", alias="IGENTIC_EXECUTOR_URL")
     igentic_app_id: str = Field(default="", alias="IGENTIC_APP_ID")
     igentic_api_key: str = Field(default="", alias="IGENTIC_API_KEY")
     igentic_bearer_token: str = Field(default="", alias="IGENTIC_BEARER_TOKEN")
     igentic_username: str = Field(default="", alias="IGENTIC_USERNAME")
 
-    # iGentic Resume Parser Agent (Optional separate single-agent app)
-    igentic_parser_executor_url: str = Field(default="", alias="IGENTIC_PARSER_EXECUTOR_URL")
-    igentic_parser_app_id: str = Field(default="", alias="IGENTIC_PARSER_APP_ID")
 
     # Frontend & CORS
     cors_origins: list[str] = Field(default=["http://localhost:5173"], alias="CORS_ORIGINS")
@@ -69,6 +66,7 @@ class Settings(BaseSettings):
     points_per_referral: int = Field(default=10, alias="POINTS_PER_REFERRAL")
     max_resume_mb: int = Field(default=5, alias="MAX_RESUME_MB")
     resume_parser_mode: str = Field(default="auto", alias="RESUME_PARSER_MODE")  # auto | agent | python
+    job_match_mode: str = Field(default="auto", alias="JOB_MATCH_MODE")  # auto | agent | python
 
     # Recruiter notifications (comma-separated, fallback to active Zoho recruiters)
     recruiter_notify_emails: str = Field(default="", alias="RECRUITER_NOTIFY_EMAILS")

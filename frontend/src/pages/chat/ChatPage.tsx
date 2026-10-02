@@ -132,13 +132,18 @@ export const ChatPage: React.FC = () => {
                 accumulatedText += parsed.delta;
               } else if (parsed.content) {
                 accumulatedText += parsed.content;
+              } else if (parsed.Result) {
+                accumulatedText = parsed.Result;
+              } else if (parsed.Error) {
+                accumulatedText = `⚠️ ${parsed.Error}`;
               }
-              if (parsed.conversation_id) {
-                setConversationId(parsed.conversation_id);
+              if (parsed.conversation_id || parsed.SessionId) {
+                setConversationId(parsed.conversation_id || parsed.SessionId);
               }
             } catch {
               accumulatedText += dataStr;
             }
+
 
             // Update agent message content in real time
             setMessages((prev) =>
@@ -234,8 +239,8 @@ export const ChatPage: React.FC = () => {
               <div
                 className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-white text-xs shadow-xs ${
                   msg.sender === 'user'
-                    ? 'bg-slate-800'
-                    : 'bg-gradient-to-tr from-brand-600 to-indigo-500'
+                    ? 'bg-stone-900 border border-stone-800'
+                    : 'bg-gradient-to-tr from-brand-700 to-stone-900 border border-stone-800'
                 }`}
               >
                 {msg.sender === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
@@ -245,14 +250,14 @@ export const ChatPage: React.FC = () => {
               <div
                 className={`max-w-2xl rounded-2xl px-5 py-3.5 text-sm leading-relaxed ${
                   msg.sender === 'user'
-                    ? 'bg-brand-600 text-white shadow-xs'
-                    : 'bg-slate-50 border border-slate-200/80 text-slate-800'
+                    ? 'bg-brand-700 text-white shadow-xs'
+                    : 'bg-stone-50 border border-stone-200/90 text-stone-800'
                 }`}
               >
                 {msg.sender === 'user' ? (
                   <p className="whitespace-pre-wrap">{msg.text}</p>
                 ) : (
-                  <div className="prose prose-slate prose-sm max-w-none prose-p:leading-relaxed prose-headings:font-bold prose-headings:text-slate-900 prose-table:border-collapse prose-th:border prose-th:border-slate-200 prose-th:p-2 prose-td:border prose-td:border-slate-200 prose-td:p-2">
+                  <div className="prose prose-slate prose-sm max-w-none prose-p:leading-relaxed prose-headings:font-bold prose-headings:text-stone-900 prose-table:border-collapse prose-th:border prose-th:border-stone-200 prose-th:p-2 prose-td:border prose-td:border-stone-200 prose-td:p-2">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {msg.text || (msg.isStreaming ? 'Thinking...' : '')}
                     </ReactMarkdown>
@@ -277,16 +282,16 @@ export const ChatPage: React.FC = () => {
 
         {/* Suggested Prompts Bar */}
         {messages.length <= 2 && (
-          <div className="px-6 py-2.5 bg-slate-50/60 border-t border-slate-100 flex items-center space-x-2 overflow-x-auto scrollbar-none">
-            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider shrink-0 flex items-center space-x-1">
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+          <div className="px-6 py-2.5 bg-stone-50/70 border-t border-stone-100 flex items-center space-x-2 overflow-x-auto scrollbar-none">
+            <span className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider shrink-0 flex items-center space-x-1">
+              <Sparkles className="w-3.5 h-3.5 text-brand-600" />
               <span>Suggested:</span>
             </span>
             {suggestions.map((prompt, i) => (
               <button
                 key={i}
                 onClick={() => handleSend(prompt)}
-                className="shrink-0 px-3 py-1 bg-white hover:bg-brand-50 hover:text-brand-700 hover:border-brand-200 border border-slate-200/80 rounded-full text-xs text-slate-600 transition"
+                className="shrink-0 px-3 py-1 bg-white hover:bg-brand-50 hover:text-brand-800 hover:border-brand-200 border border-stone-200 rounded-full text-xs text-stone-600 transition"
               >
                 {prompt}
               </button>
@@ -295,7 +300,7 @@ export const ChatPage: React.FC = () => {
         )}
 
         {/* Input Form Bar */}
-        <div className="p-4 border-t border-slate-100 bg-white">
+        <div className="p-4 border-t border-stone-100 bg-white">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -313,14 +318,14 @@ export const ChatPage: React.FC = () => {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={isStreaming}
-              className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition"
+              className="flex-1 px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl text-sm placeholder-stone-400 focus:outline-hidden focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700 focus:bg-white transition"
             />
 
             {isStreaming ? (
               <button
                 type="button"
                 onClick={handleStop}
-                className="p-3 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl shadow-xs transition"
+                className="p-3 bg-stone-800 hover:bg-stone-900 text-white rounded-2xl shadow-xs transition"
                 title="Stop Response Generation"
               >
                 <Square className="w-4 h-4 fill-current" />
@@ -329,7 +334,7 @@ export const ChatPage: React.FC = () => {
               <button
                 type="submit"
                 disabled={!input.trim()}
-                className="p-3 bg-brand-600 hover:bg-brand-700 text-white rounded-2xl shadow-xs transition disabled:opacity-40"
+                className="p-3 bg-brand-700 hover:bg-brand-800 text-white rounded-2xl shadow-xs transition disabled:opacity-40"
                 title="Send Message"
               >
                 <Send className="w-4 h-4" />

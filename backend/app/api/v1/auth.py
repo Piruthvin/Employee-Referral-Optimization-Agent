@@ -18,6 +18,7 @@ from app.core.security import (
 )
 from app.core.dependencies import get_current_user
 from app.services.zoho_users_service import zoho_users_service
+from app.domain.exceptions import ZohoUsersUnavailableError
 from app.services.email_service import email_service
 from app.domain.models import (
     LoginRequest,
@@ -56,11 +57,21 @@ async def login_request(req: LoginRequest, request: Request) -> LoginResponse:
         )
 
     # Check against Zoho Active Users
-    zoho_user = None
     try:
         zoho_user = await zoho_users_service.find_user_by_email(email)
-    except Exception as e:
-        logger.error("Failed to query Zoho Users: %s", e)
+        logger.info(
+            "[Auth] User lookup for %s: found=%s (source=%s)",
+            email,
+            bool(zoho_user),
+            zoho_users_service.users_source,
+        )
+    except ZohoUsersUnavailableError as exc:
+        logger.error("[Auth] Zoho users directory unavailable during login_request: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Zoho identity service is unavailable. Please verify Zoho API credentials and scopes.",
+        ) from exc
+
 
     # Email-only mode (development testing only)
     if settings.auth_mode == "email_only" and settings.app_env == "development":
@@ -79,11 +90,18 @@ async def login_request(req: LoginRequest, request: Request) -> LoginResponse:
         fn = zoho_user.get("first_name", "") or ""
         ln = zoho_user.get("last_name", "") or ""
         name = f"{fn} {ln}".strip() or email
-        token = create_session_jwt(email, role, name, str(zoho_user.get("id", "")))
+        user_id = str(zoho_user.get("id", ""))
+        token = create_session_jwt(email, role, name, user_id)
         return LoginResponse(
             success=True,
             message="Development direct login successful.",
             challenge_token=token,
+            access_token=token,
+            role=role,
+            email=email,
+            name=name,
+            zoho_user_id=user_id,
+            user={"email": email, "role": role, "name": name, "zoho_user_id": user_id},
             auth_mode="email_only",
         )
 
@@ -116,7 +134,11 @@ async def login_request(req: LoginRequest, request: Request) -> LoginResponse:
     # Send OTP email via Microsoft Graph
     sent = await email_service.send_otp_email(email, otp)
     if not sent:
-        logger.warning("Failed to send OTP email to %s via Microsoft Graph.", email)
+        logger.error("Failed to send OTP email to %s via Microsoft Graph.", email)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to send verification code email via Microsoft Graph. Please check Microsoft Graph credentials in backend/.env.",
+        )
 
     return LoginResponse(
         success=True,
@@ -142,14 +164,19 @@ async def login_verify(req: VerifyRequest) -> VerifyResponse:
         try:
             payload = jwt.decode(req.challenge_token, settings.jwt_secret_key, algorithms=[ALGORITHM])
             if payload.get("type") == "session":
+                v_role = payload.get("role", "employee")
+                v_email = payload.get("email", "")
+                v_name = payload.get("name", "")
+                v_uid = payload.get("zoho_user_id", "")
                 return VerifyResponse(
                     access_token=req.challenge_token,
                     token_type="bearer",
                     expires_in=settings.jwt_expiry_hours * 3600,
-                    role=payload.get("role", "employee"),
-                    email=payload.get("email", ""),
-                    name=payload.get("name", ""),
-                    zoho_user_id=payload.get("zoho_user_id", ""),
+                    role=v_role,
+                    email=v_email,
+                    name=v_name,
+                    zoho_user_id=v_uid,
+                    user={"email": v_email, "role": v_role, "name": v_name, "zoho_user_id": v_uid},
                 )
         except JWTError:
             pass
@@ -164,7 +191,21 @@ async def login_verify(req: VerifyRequest) -> VerifyResponse:
         )
 
     # Look up user in Zoho to fetch latest role and ID
-    zoho_user = await zoho_users_service.find_user_by_email(email)
+    try:
+        zoho_user = await zoho_users_service.find_user_by_email(email)
+        logger.info(
+            "[Auth Verify] User lookup for %s: found=%s (source=%s)",
+            email,
+            bool(zoho_user),
+            zoho_users_service.users_source,
+        )
+    except ZohoUsersUnavailableError as exc:
+        logger.error("[Auth Verify] Zoho users directory unavailable during login_verify: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Zoho identity service is unavailable. Please try again later.",
+        ) from exc
+
     if not zoho_user:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -199,6 +240,7 @@ async def login_verify(req: VerifyRequest) -> VerifyResponse:
         email=email,
         name=name,
         zoho_user_id=user_id,
+        user={"email": email, "role": role, "name": name, "zoho_user_id": user_id},
     )
 
 

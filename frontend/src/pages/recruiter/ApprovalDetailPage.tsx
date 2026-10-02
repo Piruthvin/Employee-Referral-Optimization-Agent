@@ -147,7 +147,7 @@ export const ApprovalDetailPage: React.FC = () => {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-brand-700" />
       </div>
     );
   }
@@ -156,11 +156,11 @@ export const ApprovalDetailPage: React.FC = () => {
     return (
       <div className="max-w-4xl mx-auto px-4 py-12 text-center">
         <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
-        <h2 className="text-xl font-bold text-slate-800">Candidate Not Found</h2>
-        <p className="text-sm text-slate-500 mt-1">{errorMsg || 'Could not locate candidate in Zoho.'}</p>
+        <h2 className="text-xl font-bold text-stone-800">Candidate Not Found</h2>
+        <p className="text-sm text-stone-500 mt-1">{errorMsg || 'Could not locate candidate in Zoho.'}</p>
         <Link
           to="/"
-          className="mt-6 inline-flex items-center space-x-2 text-sm font-semibold text-brand-600 hover:text-brand-700"
+          className="mt-6 inline-flex items-center space-x-2 text-sm font-semibold text-brand-700 hover:text-brand-800"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Back to Dashboard</span>
@@ -174,18 +174,18 @@ export const ApprovalDetailPage: React.FC = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       {/* Top Breadcrumb & Action Bar */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200/80 pb-4">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-stone-200/90 pb-4">
         <div className="flex items-center space-x-4">
           <button
             onClick={() => navigate('/')}
-            className="p-2 text-slate-500 hover:text-slate-900 rounded-xl hover:bg-slate-100 transition"
+            className="p-2 text-stone-500 hover:text-stone-900 rounded-xl hover:bg-stone-100 transition"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">{candidate.full_name}</h1>
-            <p className="text-xs text-slate-500">
-              Referred by <span className="font-semibold text-slate-700">{candidate.referred_by}</span> on {candidate.referred_date || 'Recent'}
+            <h1 className="text-2xl font-bold text-stone-900">{candidate.full_name}</h1>
+            <p className="text-xs text-stone-500">
+              Referred by <span className="font-semibold text-stone-700">{candidate.referred_by}</span> on {candidate.referred_date || 'Recent'}
             </p>
           </div>
         </div>
@@ -195,9 +195,9 @@ export const ApprovalDetailPage: React.FC = () => {
           <button
             onClick={handleDownloadResume}
             disabled={downloading}
-            className="inline-flex items-center space-x-1.5 px-3.5 py-2 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-xl shadow-xs transition"
+            className="inline-flex items-center space-x-1.5 px-3.5 py-2 border border-stone-300 bg-white hover:bg-stone-50 text-stone-700 text-xs font-semibold rounded-xl shadow-xs transition"
           >
-            <FileText className="w-4 h-4 text-slate-500" />
+            <FileText className="w-4 h-4 text-stone-500" />
             <span>{downloading ? 'Loading Resume...' : 'View Resume'}</span>
           </button>
 
@@ -228,15 +228,15 @@ export const ApprovalDetailPage: React.FC = () => {
               disabled={!isApproved}
               className={`inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-semibold shadow-xs transition ${
                 isApproved
-                  ? 'bg-brand-600 hover:bg-brand-700 text-white'
-                  : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                  ? 'bg-brand-700 hover:bg-brand-800 text-white'
+                  : 'bg-stone-100 text-stone-400 cursor-not-allowed border border-stone-200'
               }`}
             >
               {isApproved ? <Calendar className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
               <span>Schedule Interview</span>
             </button>
             {!isApproved && (
-              <div className="absolute right-0 top-full mt-1 hidden group-hover:block w-48 bg-slate-900 text-white text-[11px] rounded-lg p-2 shadow-lg z-20 text-center">
+              <div className="absolute right-0 top-full mt-1 hidden group-hover:block w-48 bg-stone-900 text-white text-[11px] rounded-lg p-2 shadow-lg z-20 text-center">
                 Candidate referral must be approved before scheduling an interview.
               </div>
             )}
@@ -344,56 +344,56 @@ export const ApprovalDetailPage: React.FC = () => {
           </div>
 
           {/* Work Experience Timeline */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs space-y-4">
+          <div className="bg-white rounded-2xl border border-stone-200/90 p-6 shadow-xs space-y-4">
             <div className="flex items-center space-x-2">
-              <Briefcase className="w-5 h-5 text-brand-600" />
-              <h3 className="text-sm font-bold text-slate-900">Experience History</h3>
+              <Briefcase className="w-5 h-5 text-brand-700" />
+              <h3 className="text-sm font-bold text-stone-900">Experience History</h3>
             </div>
 
             {candidate.parsed_profile?.experience && candidate.parsed_profile.experience.length > 0 ? (
-              <div className="divide-y divide-slate-100 space-y-4 pt-1">
+              <div className="divide-y divide-stone-100 space-y-4 pt-1">
                 {candidate.parsed_profile.experience.map((exp, idx) => (
                   <div key={idx} className="pt-3 first:pt-0">
                     <div className="flex justify-between items-start text-xs">
                       <div>
-                        <h4 className="font-bold text-slate-900">{exp.job_title}</h4>
-                        <p className="text-brand-700 font-medium">{exp.company}</p>
+                        <h4 className="font-bold text-stone-900">{exp.job_title}</h4>
+                        <p className="text-brand-800 font-medium">{exp.company}</p>
                       </div>
-                      <span className="text-slate-400">
+                      <span className="text-stone-400">
                         {exp.start_date || 'Start'} &mdash; {exp.end_date || (exp.is_current ? 'Present' : 'End')}
                       </span>
                     </div>
                     {exp.description && (
-                      <p className="text-xs text-slate-600 mt-2 leading-relaxed">{exp.description}</p>
+                      <p className="text-xs text-stone-600 mt-2 leading-relaxed">{exp.description}</p>
                     )}
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-slate-400 italic">No structured work history parsed.</p>
+              <p className="text-xs text-stone-400 italic">No structured work history parsed.</p>
             )}
           </div>
 
           {/* Education Section */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs space-y-4">
+          <div className="bg-white rounded-2xl border border-stone-200/90 p-6 shadow-xs space-y-4">
             <div className="flex items-center space-x-2">
-              <GraduationCap className="w-5 h-5 text-brand-600" />
-              <h3 className="text-sm font-bold text-slate-900">Education Details</h3>
+              <GraduationCap className="w-5 h-5 text-brand-700" />
+              <h3 className="text-sm font-bold text-stone-900">Education Details</h3>
             </div>
 
             {candidate.parsed_profile?.education && candidate.parsed_profile.education.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {candidate.parsed_profile.education.map((edu, idx) => (
-                  <div key={idx} className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-xs">
-                    <h4 className="font-bold text-slate-900">{edu.degree || 'Degree'}</h4>
-                    <p className="text-slate-600 mt-0.5">{edu.field_of_study}</p>
-                    <p className="text-slate-400 mt-1">{edu.institution}</p>
-                    {edu.grade && <span className="inline-block mt-2 font-semibold text-brand-700">{edu.grade}</span>}
+                  <div key={idx} className="bg-stone-50 p-4 rounded-xl border border-stone-100 text-xs">
+                    <h4 className="font-bold text-stone-900">{edu.degree || 'Degree'}</h4>
+                    <p className="text-stone-600 mt-0.5">{edu.field_of_study}</p>
+                    <p className="text-stone-400 mt-1">{edu.institution}</p>
+                    {edu.grade && <span className="inline-block mt-2 font-semibold text-brand-800">{edu.grade}</span>}
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-slate-400 italic">No structured education parsed.</p>
+              <p className="text-xs text-stone-400 italic">No structured education parsed.</p>
             )}
           </div>
         </div>
@@ -401,13 +401,13 @@ export const ApprovalDetailPage: React.FC = () => {
         {/* Right Col: AI Match Scorecard & Skills */}
         <div className="space-y-6">
           {/* Match Scorecard */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs space-y-4">
+          <div className="bg-white rounded-2xl border border-stone-200/90 p-6 shadow-xs space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <Sparkles className="w-5 h-5 text-amber-500" />
-                <h3 className="text-sm font-bold text-slate-900">Job Match Scorecard</h3>
+                <Sparkles className="w-5 h-5 text-brand-700" />
+                <h3 className="text-sm font-bold text-stone-900">Job Match Scorecard</h3>
               </div>
-              <span className="text-xs font-bold px-2.5 py-1 bg-brand-50 text-brand-700 rounded-full">
+              <span className="text-xs font-bold px-2.5 py-1 bg-brand-50 text-brand-800 border border-brand-200 rounded-full">
                 {candidate.referral_score}% Fit
               </span>
             </div>
@@ -415,17 +415,17 @@ export const ApprovalDetailPage: React.FC = () => {
             {candidate.best_match ? (
               <div className="space-y-4 pt-2">
                 <div>
-                  <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  <label className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider">
                     Target Role
                   </label>
-                  <p className="text-sm font-bold text-slate-900 mt-0.5">
+                  <p className="text-sm font-bold text-stone-900 mt-0.5">
                     {candidate.best_match.job_title}
                   </p>
                 </div>
 
-                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                <div className="w-full bg-stone-100 rounded-full h-2 overflow-hidden">
                   <div
-                    className="bg-brand-600 h-2 rounded-full"
+                    className="bg-brand-700 h-2 rounded-full"
                     style={{ width: `${Math.min(100, candidate.best_match.match_percent)}%` }}
                   />
                 </div>
@@ -511,7 +511,7 @@ export const ApprovalDetailPage: React.FC = () => {
               }
               value={decisionNote}
               onChange={(e) => setDecisionNote(e.target.value)}
-              className="w-full p-3 border border-slate-300 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-brand-500/20"
+              className="w-full p-3 border border-stone-300 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700"
             />
 
             <div className="flex space-x-3 pt-2">
@@ -521,7 +521,7 @@ export const ApprovalDetailPage: React.FC = () => {
                   setDecisionNote('');
                 }}
                 disabled={decisionLoading}
-                className="flex-1 px-4 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                className="flex-1 px-4 py-2 border border-stone-300 rounded-xl text-xs font-semibold text-stone-700 hover:bg-stone-50"
               >
                 Cancel
               </button>
@@ -543,16 +543,16 @@ export const ApprovalDetailPage: React.FC = () => {
 
       {/* Schedule Interview Modal */}
       {scheduleModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl border border-slate-100">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-lg font-bold text-slate-900">Schedule Microsoft Teams Interview</h3>
+        <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-xl border border-stone-100">
+            <div className="flex justify-between items-center border-b border-stone-100 pb-3">
+              <h3 className="text-lg font-bold text-stone-900">Schedule Microsoft Teams Interview</h3>
               <button
                 onClick={() => {
                   setScheduleModalOpen(false);
                   setScheduleSuccessMsg(null);
                 }}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-stone-400 hover:text-stone-600"
               >
                 ✕
               </button>
@@ -561,14 +561,14 @@ export const ApprovalDetailPage: React.FC = () => {
             {scheduleSuccessMsg ? (
               <div className="space-y-4 py-4 text-center">
                 <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto" />
-                <h4 className="text-base font-bold text-slate-900">Meeting Scheduled!</h4>
-                <p className="text-xs text-slate-600">{scheduleSuccessMsg}</p>
+                <h4 className="text-base font-bold text-stone-900">Meeting Scheduled!</h4>
+                <p className="text-xs text-stone-600">{scheduleSuccessMsg}</p>
                 <button
                   onClick={() => {
                     setScheduleModalOpen(false);
                     setScheduleSuccessMsg(null);
                   }}
-                  className="px-6 py-2 bg-brand-600 text-white rounded-xl text-xs font-semibold"
+                  className="px-6 py-2 bg-brand-700 hover:bg-brand-800 text-white rounded-xl text-xs font-semibold transition"
                 >
                   Done
                 </button>
@@ -576,7 +576,7 @@ export const ApprovalDetailPage: React.FC = () => {
             ) : (
               <form onSubmit={handleScheduleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">
                     Meeting Subject
                   </label>
                   <input
@@ -584,13 +584,13 @@ export const ApprovalDetailPage: React.FC = () => {
                     required
                     value={scheduleData.subject}
                     onChange={(e) => setScheduleData({ ...scheduleData, subject: e.target.value })}
-                    className="w-full p-2.5 border border-slate-300 rounded-xl text-xs"
+                    className="w-full p-2.5 border border-stone-300 rounded-xl text-xs focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700 focus:outline-hidden"
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    <label className="block text-xs font-semibold text-stone-700 mb-1">
                       Date & Start Time (Local)
                     </label>
                     <input
@@ -598,12 +598,12 @@ export const ApprovalDetailPage: React.FC = () => {
                       required
                       value={scheduleData.start_time}
                       onChange={(e) => setScheduleData({ ...scheduleData, start_time: e.target.value })}
-                      className="w-full p-2.5 border border-slate-300 rounded-xl text-xs"
+                      className="w-full p-2.5 border border-stone-300 rounded-xl text-xs focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700 focus:outline-hidden"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    <label className="block text-xs font-semibold text-stone-700 mb-1">
                       Duration (Minutes)
                     </label>
                     <select
@@ -611,7 +611,7 @@ export const ApprovalDetailPage: React.FC = () => {
                       onChange={(e) =>
                         setScheduleData({ ...scheduleData, duration_minutes: Number(e.target.value) })
                       }
-                      className="w-full p-2.5 border border-slate-300 rounded-xl text-xs bg-white"
+                      className="w-full p-2.5 border border-stone-300 rounded-xl text-xs bg-white focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700 focus:outline-hidden"
                     >
                       <option value={30}>30 Minutes</option>
                       <option value={45}>45 Minutes</option>
@@ -621,7 +621,7 @@ export const ApprovalDetailPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">
                     Interviewer Corporate Email
                   </label>
                   <input
@@ -632,7 +632,7 @@ export const ApprovalDetailPage: React.FC = () => {
                     onChange={(e) =>
                       setScheduleData({ ...scheduleData, interviewer_email: e.target.value })
                     }
-                    className="w-full p-2.5 border border-slate-300 rounded-xl text-xs"
+                    className="w-full p-2.5 border border-stone-300 rounded-xl text-xs focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700 focus:outline-hidden"
                   />
                 </div>
 
@@ -640,14 +640,14 @@ export const ApprovalDetailPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setScheduleModalOpen(false)}
-                    className="flex-1 py-2.5 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    className="flex-1 py-2.5 border border-stone-300 rounded-xl text-xs font-semibold text-stone-700 hover:bg-stone-50 transition"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={scheduleLoading}
-                    className="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-semibold shadow-xs flex items-center justify-center space-x-2"
+                    className="flex-1 py-2.5 bg-brand-700 hover:bg-brand-800 text-white rounded-xl text-xs font-semibold shadow-xs flex items-center justify-center space-x-2 transition"
                   >
                     {scheduleLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Schedule & Send Invites</span>}
                   </button>

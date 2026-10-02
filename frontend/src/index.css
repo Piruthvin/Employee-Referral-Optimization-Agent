@@ -1,12 +1,29 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --color-primary: #b91c1c;
+  --color-primary-hover: #991b1b;
+  --color-primary-active: #7f1d1d;
+  --color-primary-foreground: #ffffff;
+  --color-dark-surface: #0f0f11;
+  --color-dark-surface-foreground: #f9fafb;
+  --color-card-bg: #ffffff;
+  --color-page-bg: #fafafa;
+  --color-border: #e5e7eb;
+  --color-muted-text: #4b5563;
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-destructive: #dc2626;
+  --color-focus-ring: rgba(185, 28, 28, 0.25);
+}
+
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900 font-sans antialiased min-h-screen selection:bg-brand-500 selection:text-white;
+    @apply bg-neutral-50 text-neutral-900 font-sans antialiased min-h-screen selection:bg-brand-700 selection:text-white;
   }
 }
 
@@ -19,9 +36,9 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.4);
+  background: rgba(156, 163, 175, 0.4);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.6);
+  background: rgba(107, 114, 128, 0.6);
 }

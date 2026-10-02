@@ -41,10 +41,21 @@ class InterviewService:
 
         # ENFORCE APPROVAL GATE
         approval_status = (cand.get("Referral_Approval_Status") or "").strip().lower()
-        if approval_status != "approved":
+        cand_status = (cand.get("Candidate_Status") or "").strip().lower()
+        is_approved = approval_status == "approved" or cand_status in (
+            settings.status_on_approval.lower(),
+            "in-review",
+            "approved",
+        )
+        if not is_approved:
+            # Check candidate notes as fallback
+            notes = await zoho_service.get_candidate_notes(candidate_id)
+            is_approved = any(n.get("Note_Title") == "Referral Approved" for n in notes)
+
+        if not is_approved:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Referral not approved. Current approval status is '{cand.get('Referral_Approval_Status', 'Pending')}'. Interview scheduling is only allowed after recruiter approval.",
+                detail=f"Referral not approved. Current candidate status is '{cand.get('Candidate_Status', 'Pending')}'. Interview scheduling is only allowed after recruiter approval.",
             )
 
         # Parse timestamps
@@ -229,6 +240,7 @@ class InterviewService:
         dtstart_str = start_dt.strftime("%Y%m%dT%H%M%SZ")
         dtend_str = end_dt.strftime("%Y%m%dT%H%M%SZ")
 
+        escaped_desc = description.replace("\r", "").replace("\n", "\\n")
         ics_lines = [
             "BEGIN:VCALENDAR",
             "VERSION:2.0",
@@ -241,7 +253,7 @@ class InterviewService:
             f"DTSTART:{dtstart_str}",
             f"DTEND:{dtend_str}",
             f"SUMMARY:{summary}",
-            f"DESCRIPTION:{description.replace(chr(10), '\\n')}",
+            f"DESCRIPTION:{escaped_desc}",
             f"LOCATION:{location}",
             "STATUS:CONFIRMED",
             "SEQUENCE:0",

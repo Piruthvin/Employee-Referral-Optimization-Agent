@@ -59,5 +59,9 @@ Thumbs.db
 *.md
 !/README.md
 
+# Docs
+docs/
 *.docx
 *.pdf
+tmp/
+

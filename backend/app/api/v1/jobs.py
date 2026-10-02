@@ -5,9 +5,10 @@ Job openings and candidate matching endpoints:
 """
 
 from typing import Any
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.core.dependencies import get_current_user, get_auth_or_agent_user
+from app.core.dependencies import get_current_user, get_auth_or_agent_user, get_tool_user
 from app.services.zoho_service import zoho_service
 from app.services.job_match_service import job_match_service, normalize_skill
 from app.domain.models import (
@@ -21,15 +22,11 @@ from app.domain.models import (
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 
 
-@router.get(
-    "/open",
-    response_model=JobOpeningsResponse,
-    summary="List active job openings",
-    description="Retrieves active job openings from Zoho Recruit with required skills and experience.",
-)
-async def list_open_jobs(
-    current_user: dict[str, Any] = Depends(get_current_user),
-) -> JobOpeningsResponse:
+class ToolJobOpeningsRequest(BaseModel):
+    requester_email: str | None = Field(default=None, description="Requester email for agent tool auth")
+
+
+async def _build_open_jobs_response() -> JobOpeningsResponse:
     jobs = await zoho_service.get_open_jobs()
     items: list[JobOpeningItem] = []
 
@@ -52,15 +49,42 @@ async def list_open_jobs(
     return JobOpeningsResponse(total=len(items), data=items)
 
 
+@router.get(
+    "/open",
+    response_model=JobOpeningsResponse,
+    summary="List active job openings",
+    description="Retrieves active job openings from Zoho Recruit with required skills and experience. Callable with no auth, JWT, or X-Agent-Key.",
+)
+async def list_open_jobs(
+    current_user: dict[str, Any] = Depends(get_tool_user),
+) -> JobOpeningsResponse:
+    return await _build_open_jobs_response()
+
+
+@router.post(
+    "/open",
+    response_model=JobOpeningsResponse,
+    tags=["Agent Tools"],
+    summary="Tool 14: List Open Job Openings",
+    description="Retrieves active job openings from Zoho Recruit with required skills, experience, and department. POST tool variant for iGentic agents. Callable with no authentication, a valid frontend JWT, or X-Agent-Key — see agent-prompts/TOOLS_CONFIG.md.",
+)
+async def list_open_jobs_post(
+    req: ToolJobOpeningsRequest | None = None,
+    current_user: dict[str, Any] = Depends(get_tool_user),
+) -> JobOpeningsResponse:
+    return await _build_open_jobs_response()
+
+
 @router.post(
     "/match",
     response_model=JobMatchResponse,
-    summary="Match jobs for candidate (Tool Endpoint)",
-    description="Calculates deterministic match scores between candidate skills/experience and all open job openings. Accessible via JWT or X-Agent-Key.",
+    tags=["Agent Tools"],
+    summary="Tool 2: Match Jobs for Candidate",
+    description="Calculates AI-agent-driven match scores between candidate skills/experience and all open job openings with deterministic Python fallback. Callable with no authentication, a valid frontend JWT, or X-Agent-Key — see agent-prompts/TOOLS_CONFIG.md.",
 )
 async def match_jobs_for_candidate(
     req: JobMatchRequest,
-    current_user: dict[str, Any] = Depends(get_auth_or_agent_user),
+    current_user: dict[str, Any] = Depends(get_tool_user),
 ) -> JobMatchResponse:
     cand: dict[str, Any] | None = None
     if req.candidate_id:
@@ -90,10 +114,19 @@ async def match_jobs_for_candidate(
         cand_exp = 0.0
 
     open_jobs = await zoho_service.get_open_jobs()
-    ranked = job_match_service.rank_jobs_for_candidate(
+    ranked, matcher_used = await job_match_service.rank_jobs_for_candidate_agent_first(
         candidate_skills=cand_skills,
         candidate_exp_years=cand_exp,
         open_jobs=open_jobs,
+        candidate_profile={
+            "candidate_id": str(cand.get("id")),
+            "full_name": f"{cand.get('First_Name', '')} {cand.get('Last_Name', '')}".strip(),
+            "email": cand.get("Email"),
+            "skills": cand_skills,
+            "total_experience_years": cand_exp,
+            "current_job_title": cand.get("Current_Job_Title"),
+        },
+        candidate_id=str(cand.get("id")),
         min_match=req.min_match,
     )
 

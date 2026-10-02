@@ -80,7 +80,7 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, onClose, o
     formData.append('resume_file', file);
 
     setIsSubmitting(true);
-    setUploadProgress(10);
+    setUploadProgress(15);
 
     try {
       const response = await apiClient.post<ReferralResult>('/api/v1/referral/submit', formData, {
@@ -132,17 +132,20 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, onClose, o
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden transform transition-all">
+    <div
+      id="referral-modal-backdrop"
+      className="fixed inset-0 z-50 overflow-y-auto bg-neutral-950/60 backdrop-blur-xs flex items-center justify-center p-4"
+    >
+      <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-neutral-200 overflow-hidden transform transition-all">
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200 bg-neutral-50/80">
           <div>
-            <h3 className="text-lg font-bold text-slate-900">Refer a Candidate</h3>
-            <p className="text-xs text-slate-500">Fast, streamlined candidate referral intake</p>
+            <h3 className="text-lg font-bold text-neutral-900">Refer a Candidate</h3>
+            <p className="text-xs text-neutral-500">Fast, streamlined candidate referral intake</p>
           </div>
           <button
             onClick={handleClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition"
+            className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-lg hover:bg-neutral-100 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -152,22 +155,22 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, onClose, o
         <div className="p-6">
           {result ? (
             /* Success Card */
-            <div className="space-y-6 text-center">
-              <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
+            <div id="referral-success-card" className="space-y-6 text-center">
+              <div className="w-16 h-16 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto shadow-inner">
                 <CheckCircle2 className="w-10 h-10" />
               </div>
 
               <div>
-                <h4 className="text-xl font-bold text-slate-900">Referral Submitted!</h4>
-                <p className="text-sm text-slate-600 mt-1">
+                <h4 className="text-xl font-bold text-neutral-900">Referral Submitted!</h4>
+                <p className="text-sm text-neutral-600 mt-1">
                   Candidate profile has been created and securely synced to Zoho Recruit.
                 </p>
               </div>
 
-              <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 text-left space-y-3">
-                <div className="flex justify-between items-center text-sm border-b border-slate-200/60 pb-2">
-                  <span className="text-slate-500 font-medium">Status</span>
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
+              <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-4 text-left space-y-3">
+                <div className="flex justify-between items-center text-sm border-b border-neutral-200 pb-2">
+                  <span className="text-neutral-500 font-medium">Status</span>
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-900">
                     {result.status || 'Pending recruiter approval'}
                   </span>
                 </div>
@@ -175,23 +178,23 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, onClose, o
                 {result.best_match ? (
                   <div>
                     <div className="flex justify-between items-center text-sm mb-1">
-                      <span className="text-slate-500 font-medium">Best Matching Role</span>
-                      <span className="font-semibold text-brand-600">
+                      <span className="text-neutral-500 font-medium">Best Matching Role</span>
+                      <span className="font-semibold text-brand-700">
                         {result.best_match.match_percent}% Match
                       </span>
                     </div>
-                    <div className="text-sm font-bold text-slate-900">
+                    <div className="text-sm font-bold text-neutral-900">
                       {result.best_match.job_title}
                     </div>
-                    <div className="w-full bg-slate-200 rounded-full h-2 mt-2 overflow-hidden">
+                    <div className="w-full bg-neutral-200 rounded-full h-2 mt-2 overflow-hidden">
                       <div
-                        className="bg-brand-600 h-2 rounded-full transition-all duration-500"
+                        className="bg-brand-700 h-2 rounded-full transition-all duration-500"
                         style={{ width: `${Math.min(100, result.best_match.match_percent)}%` }}
                       />
                     </div>
                   </div>
                 ) : (
-                  <div className="text-xs text-slate-500 italic">
+                  <div className="text-xs text-neutral-500 italic">
                     Candidate profile saved. No open jobs currently match the required criteria.
                   </div>
                 )}
@@ -199,14 +202,16 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, onClose, o
 
               <div className="flex space-x-3">
                 <button
+                  id="refer-another-btn"
                   onClick={handleReset}
-                  className="flex-1 px-4 py-2.5 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-semibold rounded-xl transition"
+                  className="flex-1 px-4 py-2.5 border border-neutral-300 hover:bg-neutral-50 text-neutral-700 text-sm font-semibold rounded-xl transition cursor-pointer"
                 >
                   Refer Another
                 </button>
                 <button
+                  id="referral-done-btn"
                   onClick={handleClose}
-                  className="flex-1 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl shadow-sm transition"
+                  className="flex-1 px-4 py-2.5 bg-brand-700 hover:bg-brand-800 text-white text-sm font-semibold rounded-xl shadow-sm shadow-brand-700/20 transition cursor-pointer"
                 >
                   Done
                 </button>
@@ -214,71 +219,76 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, onClose, o
             </div>
           ) : (
             /* Referral Form - Exactly 3 Fields */
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form id="referral-form" onSubmit={handleSubmit} className="space-y-4">
               {errorMsg && (
-                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex items-start space-x-3 text-rose-700 text-sm">
-                  <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                <div
+                  id="referral-error-banner"
+                  className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex items-start space-x-3 text-rose-800 text-sm"
+                >
+                  <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-rose-600" />
                   <span>{errorMsg}</span>
                 </div>
               )}
 
               {/* Field 1: Candidate Name */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Candidate Full Name <span className="text-rose-500">*</span>
+                <label className="block text-xs font-semibold text-neutral-700 uppercase tracking-wider mb-1.5">
+                  Candidate Full Name <span className="text-brand-700">*</span>
                 </label>
                 <input
+                  id="candidate-name-input"
                   type="text"
                   required
                   placeholder="e.g. Jane Doe"
                   value={candidateName}
                   onChange={(e) => setCandidateName(e.target.value)}
                   disabled={isSubmitting}
-                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition disabled:bg-slate-50"
+                  className="w-full px-3.5 py-2.5 border border-neutral-300 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-500/25 focus:border-brand-700 transition disabled:bg-neutral-50 text-neutral-900"
                 />
               </div>
 
               {/* Field 2: Candidate Email */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Candidate Email Address <span className="text-rose-500">*</span>
+                <label className="block text-xs font-semibold text-neutral-700 uppercase tracking-wider mb-1.5">
+                  Candidate Email Address <span className="text-brand-700">*</span>
                 </label>
                 <input
+                  id="candidate-email-input"
                   type="email"
                   required
                   placeholder="e.g. jane.doe@example.com"
                   value={candidateEmail}
                   onChange={(e) => setCandidateEmail(e.target.value)}
                   disabled={isSubmitting}
-                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition disabled:bg-slate-50"
+                  className="w-full px-3.5 py-2.5 border border-neutral-300 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-500/25 focus:border-brand-700 transition disabled:bg-neutral-50 text-neutral-900"
                 />
               </div>
 
               {/* Field 3: Resume File (PDF or DOCX, max 5 MB) */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Resume File (PDF / DOCX, max 5 MB) <span className="text-rose-500">*</span>
+                <label className="block text-xs font-semibold text-neutral-700 uppercase tracking-wider mb-1.5">
+                  Resume File (PDF / DOCX, max 5 MB) <span className="text-brand-700">*</span>
                 </label>
-                <div className="relative border-2 border-dashed border-slate-300 hover:border-brand-400 rounded-xl p-4 text-center cursor-pointer transition bg-slate-50/50">
+                <div className="relative border-2 border-dashed border-neutral-300 hover:border-brand-600 rounded-xl p-4 text-center cursor-pointer transition bg-neutral-50/60">
                   <input
+                    id="candidate-resume-file"
                     type="file"
-                    required
                     accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     disabled={isSubmitting}
                     onChange={(e) => handleFileChange(e.target.files ? e.target.files[0] : null)}
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   />
                   {file ? (
-                    <div className="flex items-center justify-center space-x-2 text-brand-600 font-medium text-sm">
-                      <FileText className="w-5 h-5" />
+                    <div className="flex items-center justify-center space-x-2 text-brand-700 font-medium text-sm">
+                      <FileText className="w-5 h-5 text-brand-700" />
                       <span className="truncate max-w-xs">{file.name}</span>
-                      <span className="text-xs text-slate-400">({(file.size / (1024 * 1024)).toFixed(2)} MB)</span>
+                      <span className="text-xs text-neutral-500">({(file.size / (1024 * 1024)).toFixed(2)} MB)</span>
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center space-y-1 text-slate-500">
-                      <UploadCloud className="w-8 h-8 text-slate-400" />
-                      <span className="text-sm font-medium text-slate-700">Click or drag resume here</span>
-                      <span className="text-xs text-slate-400">Supported formats: PDF, DOCX (Max 5MB)</span>
+                    <div className="flex flex-col items-center justify-center space-y-1 text-neutral-500">
+                      <UploadCloud className="w-8 h-8 text-neutral-400" />
+                      <span className="text-sm font-medium text-neutral-800">Click or drag resume here</span>
+                      <span className="text-xs text-neutral-500">Supported formats: PDF, DOCX (Max 5MB)</span>
                     </div>
                   )}
                 </div>
@@ -287,13 +297,13 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, onClose, o
               {/* Upload Progress Bar */}
               {isSubmitting && (
                 <div className="space-y-1.5 pt-2">
-                  <div className="flex justify-between text-xs text-slate-500 font-medium">
+                  <div className="flex justify-between text-xs text-neutral-600 font-medium">
                     <span>Analyzing & parsing resume...</span>
                     <span>{uploadProgress}%</span>
                   </div>
-                  <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                  <div className="w-full bg-neutral-200 rounded-full h-1.5 overflow-hidden">
                     <div
-                      className="bg-brand-600 h-1.5 rounded-full transition-all duration-300"
+                      className="bg-brand-700 h-1.5 rounded-full transition-all duration-300"
                       style={{ width: `${uploadProgress}%` }}
                     />
                   </div>
@@ -303,17 +313,19 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, onClose, o
               {/* Submit Buttons */}
               <div className="pt-3 flex space-x-3">
                 <button
+                  id="referral-cancel-btn"
                   type="button"
                   onClick={handleClose}
                   disabled={isSubmitting}
-                  className="flex-1 px-4 py-2.5 border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-semibold rounded-xl transition"
+                  className="flex-1 px-4 py-2.5 border border-neutral-300 hover:bg-neutral-50 text-neutral-700 text-sm font-semibold rounded-xl transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
+                  id="referral-submit-btn"
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex-1 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl shadow-sm transition flex items-center justify-center space-x-2 disabled:opacity-50"
+                  className="flex-1 px-4 py-2.5 bg-brand-700 hover:bg-brand-800 text-white text-sm font-semibold rounded-xl shadow-sm shadow-brand-700/20 transition flex items-center justify-center space-x-2 disabled:opacity-50 cursor-pointer"
                 >
                   {isSubmitting ? (
                     <>

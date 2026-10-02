@@ -19,7 +19,7 @@ export const App: React.FC = () => {
 
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-slate-50 flex flex-col">
+      <div className="min-h-screen bg-stone-50 flex flex-col">
         <Navbar
           onOpenReferralModal={() => setIsReferralModalOpen(true)}
           points={employeePoints}

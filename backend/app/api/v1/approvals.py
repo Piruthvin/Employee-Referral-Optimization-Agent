@@ -11,7 +11,7 @@ from typing import Any
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.core.dependencies import get_auth_or_agent_user
+from app.core.dependencies import get_auth_or_agent_user, get_tool_user
 from app.services.approval_service import approval_service
 from app.domain.models import (
     PendingApprovalItem,
@@ -45,18 +45,26 @@ class ToolPendingRequest(BaseModel):
 @router.get(
     "/pending",
     response_model=list[PendingApprovalItem],
-    summary="Get pending referrals (Tool Endpoint)",
+    summary="Get pending referrals",
     description="Lists all candidate referrals currently awaiting recruiter review. Accessible via JWT or X-Agent-Key for recruiters.",
 )
+async def get_pending_approvals_get(
+    current_user: dict[str, Any] = Depends(get_auth_or_agent_user),
+) -> list[PendingApprovalItem]:
+    _assert_recruiter_or_manager(current_user)
+    return await approval_service.get_pending_approvals()
+
+
 @router.post(
     "/pending",
     response_model=list[PendingApprovalItem],
-    summary="Get pending referrals (POST Tool Endpoint)",
-    description="Lists all candidate referrals currently awaiting recruiter review. POST variant for iGentic tools.",
+    tags=["Agent Tools"],
+    summary="Tool 4: Get Pending Approvals",
+    description="Lists all candidate referrals currently awaiting recruiter review. Restricted to recruiters and hiring managers. Callable with no authentication, a valid frontend JWT, or X-Agent-Key — see agent-prompts/TOOLS_CONFIG.md.",
 )
-async def get_pending_approvals(
+async def get_pending_approvals_post(
     req: ToolPendingRequest | None = None,
-    current_user: dict[str, Any] = Depends(get_auth_or_agent_user),
+    current_user: dict[str, Any] = Depends(get_tool_user),
 ) -> list[PendingApprovalItem]:
     _assert_recruiter_or_manager(current_user)
     return await approval_service.get_pending_approvals()
@@ -65,12 +73,13 @@ async def get_pending_approvals(
 @router.post(
     "/approve",
     response_model=ApprovalActionResponse,
-    summary="Approve referral (Flat POST Tool Endpoint)",
-    description="Approves a candidate referral in Zoho Recruit. Accepts candidate_id in body for iGentic tools.",
+    tags=["Agent Tools"],
+    summary="Tool 5: Approve Referral",
+    description="Approves a candidate referral in Zoho Recruit, updates status, and notifies referring employee. Restricted to recruiters and hiring managers. Callable with no authentication, a valid frontend JWT, or X-Agent-Key — see agent-prompts/TOOLS_CONFIG.md.",
 )
 async def approve_referral_tool(
     req: ToolApprovalActionRequest,
-    current_user: dict[str, Any] = Depends(get_auth_or_agent_user),
+    current_user: dict[str, Any] = Depends(get_tool_user),
 ) -> ApprovalActionResponse:
     _assert_recruiter_or_manager(current_user)
     recruiter_email = current_user.get("email", "")
@@ -85,12 +94,13 @@ async def approve_referral_tool(
 @router.post(
     "/reject",
     response_model=ApprovalActionResponse,
-    summary="Reject referral (Flat POST Tool Endpoint)",
-    description="Rejects a candidate referral in Zoho Recruit. Accepts candidate_id in body for iGentic tools.",
+    tags=["Agent Tools"],
+    summary="Tool 6: Reject Referral",
+    description="Rejects a candidate referral in Zoho Recruit, records mandatory reason, and notifies referring employee. Restricted to recruiters and hiring managers. Callable with no authentication, a valid frontend JWT, or X-Agent-Key — see agent-prompts/TOOLS_CONFIG.md.",
 )
 async def reject_referral_tool(
     req: ToolApprovalActionRequest,
-    current_user: dict[str, Any] = Depends(get_auth_or_agent_user),
+    current_user: dict[str, Any] = Depends(get_tool_user),
 ) -> ApprovalActionResponse:
     _assert_recruiter_or_manager(current_user)
     recruiter_email = current_user.get("email", "")

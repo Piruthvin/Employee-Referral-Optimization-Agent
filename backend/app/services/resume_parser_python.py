@@ -163,7 +163,7 @@ class PythonResumeParser:
 
     @staticmethod
     def _extract_email(text: str) -> str | None:
-        pattern = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"
+        pattern = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-zA-Z]{2,}\b"
         match = re.search(pattern, text)
         return match.group(0).lower() if match else None
 

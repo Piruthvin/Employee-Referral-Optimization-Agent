@@ -14,6 +14,7 @@ import httpx
 from app.core.config import get_settings
 from app.infrastructure.zoho_auth import zoho_auth_manager
 from app.infrastructure.retry import retry_async
+from app.domain.exceptions import ZohoValidationError, ZohoTransportError
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,48 @@ class ZohoService:
         self._cached_candidates: list[dict[str, Any]] = []
         self._candidates_cache_time: float = 0.0
         self._cache_lock = asyncio.Lock()
+        self.search_source: str = "live"
+        self._referrer_candidates_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+        self._referrer_cache_ttl: float = 45.0
+
+    def invalidate_cache(self) -> None:
+        """Invalidates candidate and referrer caches immediately on write."""
+        self._cached_candidates = []
+        self._candidates_cache_time = 0.0
+        self._referrer_candidates_cache.clear()
+        logger.debug("Zoho candidates and referrer search cache invalidated.")
+
+    def _inspect_write_response(self, resp: httpx.Response, action_description: str) -> dict[str, Any]:
+        """
+        Validates Zoho Recruit v2 write response.
+        Zoho Recruit v2 returns HTTP 200, 201, or 202 as transport acceptance,
+        with per-record results in resp.json()['data'][0].
+        Raises ZohoValidationError on schema/data error, or ZohoTransportError on transport failure.
+        """
+        if resp.status_code not in (200, 201, 202):
+            logger.error("Zoho %s transport failed HTTP %d: %s", action_description, resp.status_code, resp.text)
+            status_code = 502 if resp.status_code >= 500 else resp.status_code
+            raise ZohoTransportError(f"Zoho {action_description} failed: HTTP {resp.status_code} - {resp.text}", status_code=status_code)
+
+        try:
+            body = resp.json()
+        except Exception:
+            return {}
+
+        data_list = body.get("data", [])
+        if not data_list or not isinstance(data_list, list):
+            return body
+
+        first_record = data_list[0]
+        rec_status = first_record.get("status")
+        if rec_status == "error":
+            code = first_record.get("code", "ERROR")
+            message = first_record.get("message", "Zoho record write rejected")
+            details = first_record.get("details", {})
+            logger.error("Zoho %s returned record error: %s", action_description, first_record)
+            raise ZohoValidationError(code=code, message=message, details=details)
+
+        return first_record
 
     async def _request(
         self,
@@ -103,23 +146,23 @@ class ZohoService:
     async def create_candidate(self, payload: dict[str, Any]) -> str:
         """
         Creates a candidate in Zoho Recruit.
-        Returns the new candidate ID.
+        Accepts HTTP 200, 201, and 202 as accepted transport, then inspects data[0].status.
+        Raises ZohoValidationError on record error, or returns the new candidate ID.
         """
         path = "Candidates"
         body = {"data": [payload]}
         resp = await self._request("POST", path, json_data=body)
 
-        if resp.status_code not in (200, 201):
-            logger.error("Zoho candidate creation failed HTTP %d: %s", resp.status_code, resp.text)
-            raise RuntimeError(f"Zoho candidate creation failed: HTTP {resp.status_code} - {resp.text}")
+        record = self._inspect_write_response(resp, "candidate creation")
+        cand_id = str(record.get("details", {}).get("id") or record.get("id") or "")
+        if not cand_id:
+            raise ZohoValidationError(
+                code="MISSING_RECORD_ID",
+                message="Zoho accepted candidate creation but returned no record ID",
+                details=record,
+            )
 
-        res_data = resp.json().get("data", [{}])[0]
-        status = res_data.get("status")
-        if status != "success":
-            logger.error("Zoho candidate create returned error: %s", res_data)
-            raise RuntimeError(f"Zoho create error: {res_data.get('message', 'Unknown error')}")
-
-        cand_id = str(res_data.get("details", {}).get("id"))
+        self.invalidate_cache()
         logger.info("Successfully created candidate record in Zoho Recruit. ID: %s", cand_id)
         return cand_id
 
@@ -128,6 +171,7 @@ class ZohoService:
         path = f"Candidates?ids={candidate_id}"
         resp = await self._request("DELETE", path)
         if resp.status_code in (200, 204):
+            self.invalidate_cache()
             logger.info("Compensating delete succeeded for candidate ID: %s", candidate_id)
             return True
         logger.error("Compensating candidate delete failed HTTP %d: %s", resp.status_code, resp.text)
@@ -139,24 +183,86 @@ class ZohoService:
         payload = {"id": candidate_id, **fields}
         body = {"data": [payload]}
         resp = await self._request("PUT", path, json_data=body)
-        if resp.status_code in (200, 201):
-            return True
-        logger.error("Failed to update candidate %s HTTP %d: %s", candidate_id, resp.status_code, resp.text)
-        return False
+        self._inspect_write_response(resp, f"candidate update {candidate_id}")
+        self.invalidate_cache()
+        return True
 
     async def get_candidates_by_referrer(self, referrer_email: str) -> list[dict[str, Any]]:
-        """Retrieves all candidates referred by the given employee email."""
-        clean_email = referrer_email.strip().lower()
-        criteria = f"((Referred_By:equals:{clean_email}))"
-        encoded = urllib.parse.quote(criteria)
-        path = f"Candidates/search?criteria={encoded}"
+        """
+        Retrieves all candidates referred by the given employee email.
 
-        resp = await self._request("GET", path)
-        if resp.status_code == 204:
-            return []
-        if resp.status_code == 200:
-            return resp.json().get("data", [])
-        return []
+        Hierarchy:
+        1. Primary targeted search: ((Referred_By:equals:{clean_email}))
+           Zoho Recruit criteria search when custom Referred_By field is enabled.
+        2. Secondary targeted search: ((Additional_Info:contains:{clean_email}))
+           Zoho Recruit native text field searchable via criteria, returns HTTP 200.
+        3. Genuine fallback: Filter cached candidate list.
+           Logs visible WARNING and sets search_source = "fallback".
+        Caches results for 45s across bursts of dashboard queries, invalidated on write.
+        """
+        clean_email = referrer_email.strip().lower()
+        now = time.time()
+
+        if clean_email in self._referrer_candidates_cache:
+            cache_ts, cached_list = self._referrer_candidates_cache[clean_email]
+            if (now - cache_ts) < self._referrer_cache_ttl:
+                return cached_list
+
+        # Path 1: Primary search by Referred_By
+        try:
+            crit1 = f"((Referred_By:equals:{clean_email}))"
+            enc1 = urllib.parse.quote(crit1)
+            resp1 = await self._request("GET", f"Candidates/search?criteria={enc1}")
+            if resp1.status_code == 200:
+                self.search_source = "live"
+                data = resp1.json().get("data", [])
+                self._referrer_candidates_cache[clean_email] = (now, data)
+                return data
+            if resp1.status_code == 204:
+                self.search_source = "live"
+                self._referrer_candidates_cache[clean_email] = (now, [])
+                return []
+        except Exception as e:
+            logger.debug("Primary search criteria check error: %s", e)
+
+        # Path 2: Secondary targeted live search by Additional_Info
+        try:
+            crit2 = f"((Additional_Info:contains:{clean_email}))"
+            enc2 = urllib.parse.quote(crit2)
+            resp2 = await self._request("GET", f"Candidates/search?criteria={enc2}")
+            if resp2.status_code == 200:
+                self.search_source = "live"
+                data = resp2.json().get("data", [])
+                self._referrer_candidates_cache[clean_email] = (now, data)
+                return data
+            if resp2.status_code == 204:
+                self.search_source = "live"
+                self._referrer_candidates_cache[clean_email] = (now, [])
+                return []
+        except Exception as e:
+            logger.debug("Secondary search criteria check error: %s", e)
+
+        # Path 3: Genuine fallback (filtered cached candidate list)
+        self.search_source = "fallback"
+        logger.warning(
+            "Zoho /Candidates/search by Referred_By returned HTTP %s and Additional_Info returned HTTP %s. "
+            "Using filtered cached candidate list fallback for %s.",
+            getattr(locals().get("resp1"), "status_code", "ERR"),
+            getattr(locals().get("resp2"), "status_code", "ERR"),
+            clean_email,
+        )
+        all_candidates = await self.get_all_candidates_cached()
+        matched: list[dict[str, Any]] = []
+        for c in all_candidates:
+            ref_by = str(c.get("Referred_By") or "").strip().lower()
+            emp_lookup = str(c.get("Referred_by_Employee__s") or "").strip().lower()
+            source = str(c.get("Source") or "").strip().lower()
+            add_info = str(c.get("Additional_Info") or "").strip().lower()
+            if clean_email in ref_by or clean_email in emp_lookup or clean_email in source or clean_email in add_info:
+                matched.append(c)
+
+        self._referrer_candidates_cache[clean_email] = (now, matched)
+        return matched
 
     async def get_all_candidates(self, page: int = 1, per_page: int = 200) -> tuple[list[dict[str, Any]], bool]:
         """Paginates all candidates from Zoho Recruit."""
@@ -210,14 +316,11 @@ class ZohoService:
         files = {
             "file": (filename, file_bytes, "application/octet-stream"),
         }
-        resp = await self._request("POST", path, files=files)
-
-        if resp.status_code not in (200, 201):
-            logger.error("Zoho attachment upload failed HTTP %d: %s", resp.status_code, resp.text)
-            raise RuntimeError(f"Attachment upload failed: HTTP {resp.status_code} - {resp.text}")
-
-        res_data = resp.json().get("data", [{}])[0]
-        att_id = str(res_data.get("details", {}).get("id", ""))
+        params = {"attachments_category": "Resume"}
+        resp = await self._request("POST", path, params=params, files=files)
+        record = self._inspect_write_response(resp, f"resume upload for candidate {candidate_id}")
+        att_id = str(record.get("details", {}).get("id") or record.get("id") or "")
+        self.invalidate_cache()
         logger.info("Successfully attached resume to candidate %s. Attachment ID: %s", candidate_id, att_id)
         return att_id
 
@@ -261,10 +364,13 @@ class ZohoService:
             ]
         }
         resp = await self._request("POST", path, json_data=payload)
-        if resp.status_code in (200, 201):
+        try:
+            self._inspect_write_response(resp, f"add note to candidate {candidate_id}")
+            self.invalidate_cache()
             return True
-        logger.warning("Zoho add_note failed HTTP %d: %s", resp.status_code, resp.text)
-        return False
+        except Exception as e:
+            logger.warning("Zoho add_note for candidate %s failed: %s", candidate_id, e)
+            return False
 
     async def get_candidate_notes(self, candidate_id: str) -> list[dict[str, Any]]:
         """Fetches notes attached to a candidate record."""
@@ -309,11 +415,14 @@ class ZohoService:
             ]
         }
         resp = await self._request("PUT", path, json_data=payload)
-        if resp.status_code in (200, 201):
+        try:
+            self._inspect_write_response(resp, f"associate candidate {candidate_id} to job {job_id}")
+            self.invalidate_cache()
             logger.info("Successfully associated candidate %s to job %s.", candidate_id, job_id)
             return True
-        logger.warning("Failed to associate candidate %s to job %s: HTTP %d %s", candidate_id, job_id, resp.status_code, resp.text)
-        return False
+        except Exception as e:
+            logger.warning("Failed to associate candidate %s to job %s: %s", candidate_id, job_id, e)
+            return False
 
 
 zoho_service = ZohoService()

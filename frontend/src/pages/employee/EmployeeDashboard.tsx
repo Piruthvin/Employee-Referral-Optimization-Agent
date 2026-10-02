@@ -75,7 +75,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-    } catch (err) {
+    } catch {
       alert('Could not retrieve candidate resume. Please check with recruiting.');
     } finally {
       setDownloadingId(null);
@@ -91,51 +91,56 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
   const getStatusBadge = (r: CandidateReferral) => {
     if (r.candidate_status?.toLowerCase().includes('interview')) {
       return (
-        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-          <Calendar className="w-3.5 h-3.5 mr-1" />
+        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-neutral-900 text-neutral-100 border border-neutral-700 shadow-xs">
+          <Calendar className="w-3.5 h-3.5 mr-1 text-brand-400" />
           Interview Scheduled
         </span>
       );
     }
     if (r.approval_status === 'Approved') {
       return (
-        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-          <CheckCircle className="w-3.5 h-3.5 mr-1" />
+        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+          <CheckCircle className="w-3.5 h-3.5 mr-1 text-emerald-600" />
           Approved
         </span>
       );
     }
     if (r.approval_status === 'Rejected') {
       return (
-        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-800 border border-rose-200">
           Rejected
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-        <Clock className="w-3.5 h-3.5 mr-1" />
+      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-900 border border-amber-200">
+        <Clock className="w-3.5 h-3.5 mr-1 text-amber-600" />
         Pending Review
       </span>
     );
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      {/* Welcome Banner */}
-      <div className="bg-gradient-to-r from-brand-900 via-indigo-900 to-slate-900 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
+    <div id="employee-dashboard" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      {/* Enterprise Dark & Red Welcome Banner */}
+      <div className="bg-gradient-to-r from-black via-neutral-900 to-neutral-950 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden border border-neutral-800">
         <div className="relative z-10 max-w-2xl">
-          <h1 className="text-3xl font-extrabold tracking-tight">Welcome back, {user?.name}!</h1>
-          <p className="mt-2 text-brand-100 text-sm leading-relaxed">
-            Refer exceptional colleagues and friends. Help your teams grow while earning referral rewards and points for every candidate submitted.
+          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-brand-950/80 border border-brand-700/40 text-brand-300 text-xs font-semibold mb-4">
+            <span className="w-2 h-2 rounded-full bg-brand-500 animate-pulse" />
+            <span>Referral Acceleration Engine</span>
+          </div>
+          <h1 className="text-3xl font-extrabold tracking-tight text-white">Welcome back, {user?.name}!</h1>
+          <p className="mt-2 text-neutral-300 text-sm leading-relaxed">
+            Refer exceptional talent to active roles. Help your organization scale while earning recognition and points for every candidate submitted.
           </p>
 
           <div className="mt-6 flex flex-wrap gap-4">
             <button
+              id="banner-refer-candidate-btn"
               onClick={onOpenReferralModal}
-              className="inline-flex items-center space-x-2 bg-white text-brand-900 hover:bg-brand-50 px-5 py-2.5 rounded-xl font-semibold text-sm shadow-md transition transform active:scale-95"
+              className="inline-flex items-center space-x-2 bg-brand-700 hover:bg-brand-800 text-white px-5 py-2.5 rounded-xl font-semibold text-sm shadow-lg shadow-brand-900/30 transition transform active:scale-95 cursor-pointer"
             >
-              <UserPlus className="w-4 h-4 text-brand-600" />
+              <UserPlus className="w-4 h-4" />
               <span>Refer a Candidate</span>
             </button>
 
@@ -144,71 +149,72 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
               className="inline-flex items-center space-x-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 px-5 py-2.5 rounded-xl font-semibold text-sm backdrop-blur-xs transition"
             >
               <span>Ask Referral AI</span>
-              <ChevronRight className="w-4 h-4 text-brand-200" />
+              <ChevronRight className="w-4 h-4 text-brand-300" />
             </Link>
           </div>
         </div>
 
-        {/* Ambient gradient decoration */}
-        <div className="absolute -right-10 -bottom-10 w-80 h-80 bg-brand-500/20 rounded-full blur-3xl pointer-events-none" />
+        {/* Ambient deep red gradient decoration */}
+        <div className="absolute -right-10 -bottom-10 w-80 h-80 bg-brand-700/15 rounded-full blur-3xl pointer-events-none" />
       </div>
 
       {/* Metrics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Points Card */}
-        <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs flex items-center justify-between">
+        <div id="employee-points-card" className="bg-white rounded-2xl p-6 border border-neutral-200 shadow-xs flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Earned Points</p>
-            <h3 className="text-3xl font-extrabold text-slate-900 mt-1">{pointsData?.points ?? 0}</h3>
-            <p className="text-xs text-amber-600 font-medium mt-1">10 pts earned per referral</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Earned Points</p>
+            <h3 className="text-3xl font-extrabold text-neutral-900 mt-1">{pointsData?.points ?? 0}</h3>
+            <p className="text-xs text-amber-700 font-semibold mt-1">10 pts earned per referral</p>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100">
             <Award className="w-6 h-6" />
           </div>
         </div>
 
         {/* Total Referrals Card */}
-        <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs flex items-center justify-between">
+        <div className="bg-white rounded-2xl p-6 border border-neutral-200 shadow-xs flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Referrals</p>
-            <h3 className="text-3xl font-extrabold text-slate-900 mt-1">{pointsData?.total_referrals ?? 0}</h3>
-            <p className="text-xs text-slate-500 font-medium mt-1">Candidates submitted</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Total Referrals</p>
+            <h3 className="text-3xl font-extrabold text-neutral-900 mt-1">{pointsData?.total_referrals ?? 0}</h3>
+            <p className="text-xs text-neutral-500 font-medium mt-1">Candidates submitted</p>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-2xl bg-brand-50 text-brand-700 flex items-center justify-center border border-brand-100">
             <Users className="w-6 h-6" />
           </div>
         </div>
 
         {/* Approved Referrals Card */}
-        <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs flex items-center justify-between">
+        <div className="bg-white rounded-2xl p-6 border border-neutral-200 shadow-xs flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Approved by Recruiter</p>
-            <h3 className="text-3xl font-extrabold text-slate-900 mt-1">{pointsData?.approved_referrals ?? 0}</h3>
-            <p className="text-xs text-emerald-600 font-medium mt-1">Progressed to recruiting review</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Approved by Recruiter</p>
+            <h3 className="text-3xl font-extrabold text-neutral-900 mt-1">{pointsData?.approved_referrals ?? 0}</h3>
+            <p className="text-xs text-emerald-700 font-semibold mt-1">Progressed to recruiting review</p>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100">
             <CheckCircle className="w-6 h-6" />
           </div>
         </div>
       </div>
 
       {/* Referrals Section */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-        <div className="px-6 py-5 border-b border-slate-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs overflow-hidden">
+        <div className="px-6 py-5 border-b border-neutral-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h2 className="text-lg font-bold text-slate-900">My Candidate Referrals</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Real-time status updates from Zoho Recruit</p>
+            <h2 className="text-lg font-bold text-neutral-900">My Candidate Referrals</h2>
+            <p className="text-xs text-neutral-500 mt-0.5">Real-time status updates from Zoho Recruit</p>
           </div>
 
           <div className="flex items-center space-x-3">
             <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-2.5" />
               <input
+                id="referral-search-input"
                 type="text"
                 placeholder="Search candidates..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 pr-3 py-1.5 border border-slate-300 rounded-xl text-xs placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
+                className="pl-9 pr-3 py-1.5 border border-neutral-300 rounded-xl text-xs placeholder-neutral-400 focus:outline-hidden focus:ring-2 focus:ring-brand-500/25 focus:border-brand-700 text-neutral-900"
               />
             </div>
 
@@ -216,7 +222,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
               onClick={fetchData}
               disabled={loading}
               title="Refresh Referrals"
-              className="p-2 border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-600 transition"
+              className="p-2 border border-neutral-200 rounded-xl hover:bg-neutral-50 text-neutral-600 transition cursor-pointer"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -226,9 +232,9 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
         {/* Table or Empty State */}
         {filteredReferrals.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table id="employee-referrals-table" className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-slate-200/60 bg-slate-50/50 text-slate-500 text-[11px] font-semibold uppercase tracking-wider">
+                <tr className="border-b border-neutral-200 bg-neutral-50 text-neutral-600 text-[11px] font-semibold uppercase tracking-wider">
                   <th className="py-3 px-6">Candidate</th>
                   <th className="py-3 px-6">Referred Date</th>
                   <th className="py-3 px-6">Best Match</th>
@@ -237,30 +243,30 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                   <th className="py-3 px-6 text-right">Resume</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-sm">
+              <tbody className="divide-y divide-neutral-100 text-sm">
                 {filteredReferrals.map((candidate) => (
-                  <tr key={candidate.candidate_id} className="hover:bg-slate-50/50 transition">
+                  <tr key={candidate.candidate_id} className="hover:bg-neutral-50/70 transition">
                     <td className="py-4 px-6">
-                      <div className="font-semibold text-slate-900">{candidate.full_name}</div>
-                      <div className="text-xs text-slate-500">{candidate.email}</div>
+                      <div className="font-semibold text-neutral-900">{candidate.full_name}</div>
+                      <div className="text-xs text-neutral-500">{candidate.email}</div>
                     </td>
 
-                    <td className="py-4 px-6 text-xs text-slate-600">
+                    <td className="py-4 px-6 text-xs text-neutral-600">
                       {candidate.referred_date || 'Recent'}
                     </td>
 
-                    <td className="py-4 px-6 text-xs text-slate-700 font-medium">
+                    <td className="py-4 px-6 text-xs text-neutral-800 font-medium">
                       {candidate.best_match?.job_title || 'General Intake'}
                     </td>
 
                     <td className="py-4 px-6">
                       <div className="flex items-center space-x-2">
-                        <span className="text-xs font-semibold text-slate-700">
+                        <span className="text-xs font-semibold text-neutral-800">
                           {candidate.referral_score || 0}%
                         </span>
-                        <div className="w-16 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                        <div className="w-16 bg-neutral-200 rounded-full h-1.5 overflow-hidden">
                           <div
-                            className="bg-brand-600 h-1.5 rounded-full"
+                            className="bg-brand-700 h-1.5 rounded-full"
                             style={{ width: `${Math.min(100, candidate.referral_score || 0)}%` }}
                           />
                         </div>
@@ -275,9 +281,9 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
                           handleDownloadResume(candidate.candidate_id, candidate.full_name)
                         }
                         disabled={downloadingId === candidate.candidate_id}
-                        className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-100 transition disabled:opacity-50"
+                        className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 text-xs font-medium text-neutral-700 hover:bg-neutral-100 transition disabled:opacity-50 cursor-pointer"
                       >
-                        <FileText className="w-3.5 h-3.5 text-slate-500" />
+                        <FileText className="w-3.5 h-3.5 text-neutral-500" />
                         <span>
                           {downloadingId === candidate.candidate_id ? 'Loading...' : 'View Resume'}
                         </span>
@@ -289,15 +295,15 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({
             </table>
           </div>
         ) : (
-          <div className="py-16 text-center">
-            <Users className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-            <h3 className="text-sm font-semibold text-slate-800">No candidate referrals found</h3>
-            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+          <div id="employee-empty-state" className="py-16 text-center">
+            <Users className="w-12 h-12 text-neutral-300 mx-auto mb-3" />
+            <h3 className="text-sm font-semibold text-neutral-800">No candidate referrals found</h3>
+            <p className="text-xs text-neutral-500 mt-1 max-w-sm mx-auto">
               You haven't referred any candidates yet. Click below to submit your first referral and earn 10 points!
             </p>
             <button
               onClick={onOpenReferralModal}
-              className="mt-4 inline-flex items-center space-x-2 px-4 py-2 bg-brand-600 text-white rounded-xl text-xs font-semibold hover:bg-brand-700 transition"
+              className="mt-4 inline-flex items-center space-x-2 px-4 py-2 bg-brand-700 text-white rounded-xl text-xs font-semibold hover:bg-brand-800 transition cursor-pointer"
             >
               <UserPlus className="w-4 h-4" />
               <span>Refer Candidate Now</span>

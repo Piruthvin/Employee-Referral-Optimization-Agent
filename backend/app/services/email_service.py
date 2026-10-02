@@ -69,13 +69,17 @@ class EmailService:
 
         token = await self.get_graph_token()
         if not token or not settings.ms_sender_upn:
-            logger.warning(
-                "[DEV/MOCK EMAIL] To: %s | Subject: %s | Graph credentials not fully configured.",
-                recipients,
-                subject,
+            # Mask any 6-digit codes in log messages to prevent credential leak
+            import re
+            safe_subject = re.sub(r"\b\d{6}\b", "[PROTECTED]", subject)
+            logger.error(
+                "Microsoft Graph sendMail aborted: Graph credentials not configured (tenant=%s, client=%s, sender=%s). Subject: %s",
+                bool(settings.ms_tenant_id),
+                bool(settings.ms_client_id),
+                bool(settings.ms_sender_upn),
+                safe_subject,
             )
-            # In development/test, return True to avoid crashing caller
-            return True
+            return False
 
         to_recipients_payload = [{"emailAddress": {"address": addr}} for addr in recipients]
 

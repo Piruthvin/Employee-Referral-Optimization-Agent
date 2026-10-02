@@ -16,13 +16,18 @@ import httpx
 ROOT_DIR = Path(__file__).resolve().parent.parent
 ENV_FILE = ROOT_DIR / "backend" / ".env"
 
-# Required Zoho Recruit scopes
+# Required Zoho Recruit v2 OAuth2 scopes
+# Consolidated list granting full access for records, users directory, and field metadata/settings
 SCOPES = [
+    "ZohoRecruit.users.ALL",
     "ZohoRecruit.users.READ",
     "ZohoRecruit.candidates.ALL",
-    "ZohoRecruit.jobopenings.READ",
+    "ZohoRecruit.jobopenings.ALL",
     "ZohoRecruit.modules.ALL",
+    "ZohoRecruit.settings.ALL",
     "ZohoRecruit.settings.fields.READ",
+    "ZohoRecruit.setup.ALL",
+    "ZohoRecruit.org.ALL",
 ]
 
 

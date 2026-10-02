@@ -13,6 +13,7 @@ from app.services.zoho_service import zoho_service
 from app.domain.models import (
     DashboardMetricsResponse,
     ConversionMetricsResponse,
+    FunnelStageItem,
     PendingReferralsResponse,
     ReferralTrendsResponse,
     TopCandidatesResponse,
@@ -83,12 +84,13 @@ class AnalyticsService:
         )
 
     async def get_conversion_metrics(self) -> ConversionMetricsResponse:
-        """Calculates funnel conversion ratios."""
+        """Calculates funnel conversion ratios and 5-stage drop-off metrics."""
         candidates = await zoho_service.get_all_candidates_cached()
 
         total = 0
         approved = 0
         scheduled = 0
+        offer = 0
         hired = 0
 
         for c in candidates:
@@ -101,16 +103,49 @@ class AnalyticsService:
             app_status = (c.get("Referral_Approval_Status") or "").strip().lower()
             cand_status = (c.get("Candidate_Status") or "").strip().lower()
 
-            if app_status == "approved":
+            is_hired = "hire" in cand_status or "joined" in cand_status
+            is_offer = is_hired or ("offer" in cand_status)
+            is_interview = is_offer or ("interview" in cand_status or "scheduled" in cand_status)
+            is_approved = is_interview or (app_status == "approved" or "in-review" in cand_status)
+
+            if is_approved:
                 approved += 1
-            if "interview" in cand_status:
+            if is_interview:
                 scheduled += 1
-            if "hire" in cand_status:
+            if is_offer:
+                offer += 1
+            if is_hired:
                 hired += 1
 
         ref_to_app = round((approved / total * 100.0), 1) if total > 0 else 0.0
         app_to_int = round((scheduled / approved * 100.0), 1) if approved > 0 else 0.0
         hire_conv = round((hired / total * 100.0), 1) if total > 0 else 0.0
+
+        # Build 5-stage recruitment funnel per TOOLS_CONFIG.md and RecruiterDashboard
+        # 1. Referral (100% baseline)
+        stage_referral_conv = 100.0 if total > 0 else 0.0
+        # 2. Approved (conversion from Referral)
+        stage_approved_conv = ref_to_app
+        # 3. Interview (conversion from Approved)
+        stage_interview_conv = app_to_int
+        # 4. Offer (conversion from Interview)
+        stage_offer_conv = round((offer / scheduled * 100.0), 1) if scheduled > 0 else 0.0
+        # 5. Hire (conversion from Offer, or Interview if no intermediate offer stage)
+        if offer > 0:
+            stage_hire_conv = round((hired / offer * 100.0), 1)
+        elif scheduled > 0:
+            stage_hire_conv = round((hired / scheduled * 100.0), 1)
+        else:
+            stage_hire_conv = 0.0
+
+        funnel_stages = [
+            FunnelStageItem(stage="Referral", count=total, conversion_from_previous=stage_referral_conv),
+            FunnelStageItem(stage="Approved", count=approved, conversion_from_previous=stage_approved_conv),
+            FunnelStageItem(stage="Interview", count=scheduled, conversion_from_previous=stage_interview_conv),
+            FunnelStageItem(stage="Offer", count=offer, conversion_from_previous=stage_offer_conv),
+            FunnelStageItem(stage="Hire", count=hired, conversion_from_previous=stage_hire_conv),
+        ]
+        overall_hire_rate = round((hired / total * 100.0), 1) if total > 0 else 0.0
 
         return ConversionMetricsResponse(
             total_referrals=total,
@@ -120,6 +155,8 @@ class AnalyticsService:
             referral_to_approved_percent=ref_to_app,
             approved_to_interview_percent=app_to_int,
             overall_hire_conversion_percent=hire_conv,
+            funnel_stages=funnel_stages,
+            overall_hire_rate=overall_hire_rate,
         )
 
     async def get_pending_referrals(self, threshold_days: int = 7) -> PendingReferralsResponse:
@@ -162,6 +199,7 @@ class AnalyticsService:
             count=len(overdue),
             threshold_days=threshold_days,
             referrals=overdue,
+            overdue_referrals=overdue,
         )
 
     async def get_referral_trends(self) -> ReferralTrendsResponse:
@@ -237,8 +275,11 @@ class AnalyticsService:
 
         return {
             "email": employee_email,
+            "employee_email": employee_email,
             "referral_count": total_count,
+            "total_referrals": total_count,
             "approved_count": approved_count,
+            "approved_referrals": approved_count,
             "points": points,
             "points_per_referral": settings.points_per_referral,
         }

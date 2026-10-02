@@ -66,14 +66,20 @@ class ReferralService:
             )
 
         # 3. Structure into JSON (Agent / Python with fallback)
-        parsed_resume, parser_used = await resume_parser_service.parse_resume(clean_text)
+        parsed_resume, parser_used = await resume_parser_service.parse_resume(
+            clean_text,
+            candidate_email=candidate_email,
+            candidate_name=candidate_name,
+        )
 
-        # 4. Job Matching Against Open Jobs
+
+        # 4. Job Matching Against Open Jobs (AI Agent first, Python fallback)
         open_jobs = await zoho_service.get_open_jobs()
-        job_matches = job_match_service.rank_jobs_for_candidate(
+        job_matches, matcher_used = await job_match_service.rank_jobs_for_candidate_agent_first(
             candidate_skills=parsed_resume.skills,
             candidate_exp_years=parsed_resume.total_experience_years,
             open_jobs=open_jobs,
+            candidate_profile=parsed_resume.model_dump(),
             min_match=0,
         )
 
@@ -111,6 +117,7 @@ class ReferralService:
         note_content_lines = [
             f"=== Referral AI Parser Audit ===",
             f"Parser Used: {parser_used.upper()}",
+            f"Job Matcher Used: {matcher_used.upper()}",
             f"Referral Score: {referral_score}%" if referral_score is not None else "Referral Score: N/A",
             f"Referred By: {employee_email}",
             f"\n=== Top Job Matches ===",
@@ -145,17 +152,20 @@ class ReferralService:
                 logger.warning("Failed to associate candidate %s with job %s: %s", candidate_id, best_match["job_id"], assoc_err)
                 warnings.append(f"Could not automatically associate candidate with job '{best_match['job_title']}'.")
 
-        # 10. Recruiter Email Notification via Microsoft Graph
-        await self._send_recruiter_notification(
-            candidate_id=candidate_id,
-            candidate_name=candidate_name,
-            candidate_email=candidate_email,
-            employee_email=employee_email,
-            parsed_resume=parsed_resume,
-            best_match=best_match,
-            has_mismatch=has_mismatch,
-            mismatch_details=mismatch_details,
-            warnings=warnings,
+        # 10. Recruiter Email Notification via Microsoft Graph (non-blocking)
+        import asyncio
+        asyncio.create_task(
+            self._send_recruiter_notification(
+                candidate_id=candidate_id,
+                candidate_name=candidate_name,
+                candidate_email=candidate_email,
+                employee_email=employee_email,
+                parsed_resume=parsed_resume,
+                best_match=best_match,
+                has_mismatch=has_mismatch,
+                mismatch_details=mismatch_details,
+                warnings=warnings,
+            )
         )
 
         return {

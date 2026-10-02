@@ -8,11 +8,13 @@ Tests for resume intake, validation, extraction, parsing, and field mapping:
 """
 
 import io
+import json
 import pytest
 from unittest.mock import patch, AsyncMock
 from fastapi import UploadFile, HTTPException
 import pypdf
 import docx
+
 
 from app.services.resume_extract_service import resume_extract_service
 from app.services.resume_parser_python import python_resume_parser
@@ -220,13 +222,13 @@ def test_python_parser_on_3_sample_resumes():
 
 @pytest.mark.asyncio
 async def test_parser_agent_success():
-    """Agent parser returns structured profile matching ParsedResume schema."""
+    """Agent parser returns structured profile matching ParsedResume schema using unified executor."""
     from app.core.config import get_settings
     settings = get_settings()
-    settings.igentic_parser_executor_url = "https://mock-executor.ai/agent"
-    settings.igentic_parser_app_id = "mock-parser-app"
+    settings.igentic_executor_url = "https://mock-executor.ai/agent"
+    settings.igentic_app_id = "mock-unified-app"
 
-    agent_output = {
+    agent_output = json.dumps({
         "full_name": "Alice Smith",
         "email": "alice@test.com",
         "phone": "555-123-4567",
@@ -234,8 +236,9 @@ async def test_parser_agent_success():
         "total_experience_years": 3.0,
         "education": [],
         "experience": [],
-    }
-    with patch.object(resume_parser_service, "_call_agent_parser", AsyncMock(return_value=agent_output)):
+    })
+    from app.services.igentic_client import igentic_client
+    with patch.object(igentic_client, "parse_resume", AsyncMock(return_value=agent_output)):
         parsed, used = await resume_parser_service.parse_resume("Raw resume text for Alice Smith with skills...")
         assert used == "agent"
         assert parsed.full_name == "Alice Smith"
@@ -245,11 +248,155 @@ async def test_parser_agent_success():
 @pytest.mark.asyncio
 async def test_parser_agent_fallback_on_error():
     """When agent parser times out or errors, auto mode falls back to Python parser."""
-    with patch.object(resume_parser_service, "_call_agent_parser", AsyncMock(side_effect=TimeoutError("Timeout"))):
+    from app.services.igentic_client import igentic_client
+    with patch.object(igentic_client, "parse_resume", AsyncMock(side_effect=TimeoutError("Timeout"))):
         parsed, used = await resume_parser_service.parse_resume(SAMPLE_RESUME_DEV)
         assert used == "python"
         assert parsed.email == "john.dev@example.com"
         assert "FastAPI" in parsed.skills
+
+
+@pytest.mark.asyncio
+async def test_unified_executor_endpoint_for_chat_and_resume_parsing():
+    """
+    Asserts that resume parsing calls and chat calls hit the EXACT SAME configured IGENTIC_EXECUTOR_URL.
+    Asserts that parse_resume sends a payload containing 'raw_resume_text' (triggering RULE 1),
+    while chat sends plain user message with [CONTEXT role=... email=...].
+    """
+    import respx
+    import httpx
+    from app.core.config import get_settings
+    from app.services.igentic_client import igentic_client
+
+    settings = get_settings()
+    orig_url = settings.igentic_executor_url
+    orig_app_id = settings.igentic_app_id
+    settings.igentic_executor_url = "https://api.igentic.ai/v1/agent-executions"
+    settings.igentic_app_id = "unified-app-123"
+
+    captured_requests = []
+
+    with respx.mock(assert_all_called=False) as respx_mock:
+        respx_mock.post("https://api.igentic.ai/v1/agent-executions").mock(
+            side_effect=lambda request: (
+                captured_requests.append(request),
+                httpx.Response(200, json={"Result": '{"full_name": "Test Candidate"}', "SessionId": "sess-456"})
+            )[1]
+        )
+
+        try:
+            # 1. Chat call
+            chat_result = await igentic_client.send_chat_message(
+                user_message="Show referral status",
+                session_id="session-001",
+                user_email="employee@example.com",
+                user_role="employee",
+                is_streaming=False,
+            )
+            assert chat_result["conversation_id"] == "sess-456"
+
+            # 2. Resume parse call
+            parse_result = await igentic_client.parse_resume(
+                raw_text="Jane Developer Python 5 years",
+                candidate_email="jane@example.com",
+                candidate_name="Jane Developer",
+            )
+            assert parse_result is not None
+
+            # Assert both requests hit the exact same executor URL
+            assert len(captured_requests) == 2
+            req_chat, req_parse = captured_requests[0], captured_requests[1]
+            assert str(req_chat.url) == str(req_parse.url) == "https://api.igentic.ai/v1/agent-executions"
+
+            # Chat payload has [CONTEXT ...] and user message
+            chat_body = json.loads(req_chat.content)
+            assert "[CONTEXT role=employee email=employee@example.com]" in chat_body["userInput"]
+            assert "Show referral status" in chat_body["userInput"]
+
+            # Resume parse payload has raw_resume_text for RULE 1 routing
+            parse_body = json.loads(req_parse.content)
+            parse_input = json.loads(parse_body["userInput"])
+            assert "raw_resume_text" in parse_input
+            assert parse_input["raw_resume_text"] == "Jane Developer Python 5 years"
+            assert parse_input["candidate_email"] == "jane@example.com"
+            assert parse_input["candidate_name"] == "Jane Developer"
+
+            # Both use the exact same app ID header
+            assert req_chat.headers["x-app-id"] == "unified-app-123"
+            assert req_parse.headers["x-app-id"] == "unified-app-123"
+
+        finally:
+            settings.igentic_executor_url = orig_url
+            settings.igentic_app_id = orig_app_id
+
+
+def test_resume_parser_unmarshal_json_variants():
+    """Validates robust JSON extraction: pure JSON, markdown fences, and conversational prose."""
+    # 1. Pure JSON
+    pure = '{"full_name": "Bob Martin", "skills": ["Python"]}'
+    res1 = resume_parser_service._unmarshal_json(pure)
+    assert res1["full_name"] == "Bob Martin"
+
+    # 2. Wrapped in ```json code fence
+    fenced_json = '```json\n{"full_name": "Carol Danvers", "skills": ["Go", "Kubernetes"]}\n```'
+    res2 = resume_parser_service._unmarshal_json(fenced_json)
+    assert res2["full_name"] == "Carol Danvers"
+    assert "Kubernetes" in res2["skills"]
+
+    # 3. Wrapped in generic ``` code fence
+    fenced_generic = '```\n{"full_name": "Dave Miller", "skills": ["Docker"]}\n```'
+    res3 = resume_parser_service._unmarshal_json(fenced_generic)
+    assert res3["full_name"] == "Dave Miller"
+
+    # 4. Surrounded by conversational text before and after
+    prose_wrapped = 'Here is the extracted resume profile JSON:\n{"full_name": "Elena Rostova", "skills": ["Rust"]}\nHope this helps!'
+    res4 = resume_parser_service._unmarshal_json(prose_wrapped)
+    assert res4["full_name"] == "Elena Rostova"
+    assert res4["skills"] == ["Rust"]
+
+    # 5. Dict passthrough
+    dict_input = {"full_name": "Direct Dict", "skills": ["SQL"]}
+    assert resume_parser_service._unmarshal_json(dict_input) == dict_input
+
+    # 6. Invalid JSON raises JSONDecodeError
+    with pytest.raises(json.JSONDecodeError):
+        resume_parser_service._unmarshal_json("Not a json at all without braces")
+
+
+@pytest.mark.asyncio
+async def test_parser_agent_with_markdown_fences():
+    """Agent output containing markdown fences is cleanly parsed by parse_resume."""
+    from app.services.igentic_client import igentic_client
+    fenced_output = '```json\n{\n  "full_name": "Fenced User",\n  "email": "fenced@test.com",\n  "skills": ["Python", "FastAPI"]\n}\n```'
+    with patch.object(igentic_client, "parse_resume", AsyncMock(return_value=fenced_output)):
+        parsed, used = await resume_parser_service.parse_resume("Raw resume text...")
+        assert used == "agent"
+        assert parsed.full_name == "Fenced User"
+        assert parsed.email == "fenced@test.com"
+
+
+@pytest.mark.asyncio
+async def test_parser_agent_mode_missing_credentials_raises():
+    """When RESUME_PARSER_MODE=agent and iGentic credentials are unset, raises ValueError."""
+    from app.core.config import get_settings
+    settings = get_settings()
+    orig_url = settings.igentic_executor_url
+    orig_app_id = settings.igentic_app_id
+    orig_mode = settings.resume_parser_mode
+
+    try:
+        settings.resume_parser_mode = "agent"
+        settings.igentic_executor_url = ""
+        settings.igentic_app_id = ""
+
+        with pytest.raises(ValueError, match="IGENTIC_EXECUTOR_URL or IGENTIC_APP_ID is missing"):
+            await resume_parser_service.parse_resume("Some resume text...")
+    finally:
+        settings.igentic_executor_url = orig_url
+        settings.igentic_app_id = orig_app_id
+        settings.resume_parser_mode = orig_mode
+
+
 
 
 def test_zoho_field_mapper_reconciliation_and_metadata():
