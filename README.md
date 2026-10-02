@@ -87,25 +87,12 @@ Referral Agent/
 │   │   └── types/             # TypeScript definitions
 │   ├── staticwebapp.config.json # Azure Static Web Apps SPA routing & security headers
 │   └── tailwind.config.js
-├── deploy/                    # Azure deployment automation
-│   ├── deploy-backend.ps1 / .sh
-│   ├── update-backend.ps1 / .sh
-│   ├── deploy-frontend.ps1 / .sh
-│   ├── smoke-test.ps1
-│   └── post-deploy-checklist.md
-├── docs/                      # Documentation
-│   ├── REFERENCE_FINDINGS.md
-│   ├── BUILD_REPORT.md
-│   ├── TEST_CHECKLIST.md
-│   ├── ZOHO_SETUP.md
-│   └── TEAMS_SETUP.md
 ├── scripts/                   # Setup and verification helpers
 │   ├── generate_secrets.py
 │   ├── get_zoho_refresh_token.py
 │   ├── verify_zoho_setup.py
 │   ├── seed_test_data.py
 │   └── validate_deploy_scripts.py
-├── docker-compose.yml
 └── README.md
 ```
 
@@ -231,30 +218,6 @@ python scripts/validate_deploy_scripts.py
 ```
 
 ---
-
-## 9. Production Deployment to Azure
-
-### Deploy Backend to Azure Container Apps
-```powershell
-./deploy/deploy-backend.ps1 -ResourceGroup "ReferralAgentRG" -Location "southindia"
-```
-
-### Deploy Frontend to Azure Static Web Apps
-```powershell
-./deploy/deploy-frontend.ps1 -ResourceGroup "ReferralAgentRG"
-```
-
-### Post-Deployment Configuration
-Follow `deploy/post-deploy-checklist.md` to:
-1. Update `FRONTEND_BASE_URL` and `CORS_ORIGINS` in Azure Container Apps.
-2. Update iGentic tool URLs from your dev tunnel to the live Azure Container App FQDN.
-3. Run automated smoke tests:
-   ```powershell
-   ./deploy/smoke-test.ps1 -BaseUrl "https://<your-container-app-fqdn>"
-   ```
-
----
-
 ## 10. Troubleshooting Guide
 
 | Issue | Root Cause | Solution |
