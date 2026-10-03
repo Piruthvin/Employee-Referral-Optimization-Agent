@@ -52,7 +52,7 @@ async def send_email_notification(
     if not ok:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Failed to send notification email via Microsoft Graph.",
+            detail="Failed to send notification email via Microsoft Graph: email sending is not configured correctly for this tenant. MS_SENDER_UPN in backend/.env must be an active Microsoft 365 tenant mailbox, not an external or Gmail address.",
         )
 
     return EmailNotificationResponse(success=True, message=f"Email sent successfully to {recipient}.")

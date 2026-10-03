@@ -371,6 +371,6 @@ async def test_non_tool_endpoints_still_require_auth(client):
     resp_hist = await client.get("/api/v1/employees/history")
     assert resp_hist.status_code == 401
 
-    # /api/v1/jobs/open without token -> 401
+    # /api/v1/jobs/open is Tool 14 (list_open_jobs), so it supports unauthenticated agent tool access -> 200
     resp_jobs = await client.get("/api/v1/jobs/open")
-    assert resp_jobs.status_code == 401
+    assert resp_jobs.status_code == 200

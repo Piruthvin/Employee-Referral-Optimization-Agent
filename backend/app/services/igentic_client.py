@@ -56,6 +56,49 @@ class IGenticClient:
             return self._stream_chat(user_message, session_id, user_email, user_role)
         return await self._sync_chat(user_message, session_id, user_email, user_role)
 
+    @staticmethod
+    def _clean_termination_marker(text: str) -> str:
+        """Strips platform-level completion markers so they never leak to users or parsers."""
+        if not text:
+            return ""
+        cleaned = text.replace("TERMINATE THE PROCESS", "").replace("TERMINATE", "")
+        return cleaned.strip()
+
+    def _extract_result_from_payload(self, data: Any) -> str:
+        """Extracts the final clean result text from iGentic response payload."""
+        if not isinstance(data, dict):
+            return self._clean_termination_marker(str(data)) if data else ""
+
+        # 1. responseData.result
+        resp_data = data.get("responseData")
+        if isinstance(resp_data, dict):
+            res = resp_data.get("result")
+            if res and str(res).strip():
+                return self._clean_termination_marker(str(res))
+            # Check agentResponses in responseData
+            agent_resps = resp_data.get("agentResponses") or resp_data.get("AgentResponses")
+            if isinstance(agent_resps, list) and agent_resps:
+                last_msg = agent_resps[-1]
+                if isinstance(last_msg, dict):
+                    return self._clean_termination_marker(str(last_msg.get("Message") or last_msg.get("message") or ""))
+                return self._clean_termination_marker(str(last_msg))
+
+        # 2. Top-level Result / result / output
+        for key in ("Result", "result", "output", "response"):
+            val = data.get(key)
+            if val is not None and str(val).strip():
+                return self._clean_termination_marker(str(val))
+
+        # 3. Top-level AgentResponses
+        agent_resps = data.get("AgentResponses") or data.get("agentResponses")
+        if isinstance(agent_resps, list) and agent_resps:
+            last_msg = agent_resps[-1]
+            if isinstance(last_msg, dict):
+                return self._clean_termination_marker(str(last_msg.get("Message") or last_msg.get("message") or ""))
+            return self._clean_termination_marker(str(last_msg))
+
+        return ""
+
     async def _stream_chat(
         self,
         user_message: str,
@@ -65,6 +108,13 @@ class IGenticClient:
     ) -> AsyncGenerator[str, None]:
         settings = get_settings()
         trusted_input = f"[CONTEXT role={user_role} email={user_email}]\n{user_message}"
+        logger.info(
+            "Streaming chat to iGentic executor with verified context: [CONTEXT role=%s email=%s] session_id=%s message=%r",
+            user_role,
+            user_email,
+            session_id,
+            user_message,
+        )
 
         # If iGentic executor is not configured, provide mock development SSE stream
         if not settings.igentic_executor_url or not settings.igentic_app_id:
@@ -110,16 +160,30 @@ class IGenticClient:
                         return
 
                     async for line in resp.aiter_lines():
-                        if line:
-                            yield f"{line}\n"
-                        else:
+                        if not line:
                             yield "\n"
+                            continue
+                        if line.startswith("data: "):
+                            raw_payload = line[6:].strip()
+                            if raw_payload == "[DONE]":
+                                yield "data: [DONE]\n\n"
+                                break
+                            try:
+                                ev = json.loads(raw_payload)
+                                if isinstance(ev, dict):
+                                    for k in ("delta", "content", "Result", "result"):
+                                        if k in ev and isinstance(ev[k], str):
+                                            ev[k] = self._clean_termination_marker(ev[k])
+                                    yield f"data: {json.dumps(ev)}\n\n"
+                                    continue
+                            except Exception:
+                                pass
+                        yield f"{line}\n"
                     yield "data: [DONE]\n\n"
             except Exception as e:
                 logger.error("Error streaming from iGentic executor: %s", e)
                 yield f"data: {json.dumps({'Type': 'error', 'Error': 'Failed to connect to agent service.'})}\n\n"
                 yield "data: [DONE]\n\n"
-
 
     async def _sync_chat(
         self,
@@ -130,6 +194,13 @@ class IGenticClient:
     ) -> dict[str, str]:
         settings = get_settings()
         trusted_input = f"[CONTEXT role={user_role} email={user_email}]\n{user_message}"
+        logger.info(
+            "Sync chat to iGentic executor with verified context: [CONTEXT role=%s email=%s] session_id=%s message=%r",
+            user_role,
+            user_email,
+            session_id,
+            user_message,
+        )
 
         if not settings.igentic_executor_url or not settings.igentic_app_id:
             return {
@@ -156,7 +227,7 @@ class IGenticClient:
                 raise RuntimeError(f"iGentic executor failed with HTTP {resp.status_code}: {resp.text}")
 
             data = resp.json()
-            result_text = data.get("Result") or data.get("result") or data.get("output") or resp.text
+            result_text = self._extract_result_from_payload(data)
             sid = data.get("SessionId") or data.get("sessionId") or session_id or ""
             return {"response": result_text, "conversation_id": sid}
 
@@ -218,7 +289,7 @@ class IGenticClient:
         }
 
         headers = self._get_headers(session_id=None, accept="application/json")
-        timeout = httpx.Timeout(connect=5.0, read=25.0, write=5.0, pool=5.0)
+        timeout = httpx.Timeout(connect=15.0, read=90.0, write=15.0, pool=15.0)
 
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(settings.igentic_executor_url, json=body, headers=headers)
@@ -227,21 +298,19 @@ class IGenticClient:
                 raise RuntimeError(f"iGentic executor failed with HTTP {resp.status_code}: {resp.text}")
 
             data = resp.json()
-            result_text = data.get("Result") or data.get("result") or data.get("output") or resp.text
-            if isinstance(result_text, dict):
-                return json.dumps(result_text)
-            return str(result_text)
+            return self._extract_result_from_payload(data)
 
     async def match_jobs(
         self,
         candidate_profile: dict[str, Any],
-        open_jobs: list[dict[str, Any]],
+        open_jobs: list[dict[str, Any]] | None = None,
         candidate_id: str | None = None,
     ) -> str | None:
         """
         Sends structured job-matching payload to the unified iGentic executor.
         Contains 'job_match_request' marker which triggers RULE 2 in Group Chat Manager,
         routing the request directly to Referral_Agent.
+        The Referral_Agent itself calls Tool 14 (list_open_jobs) to discover open positions.
         Returns the raw response text (expected to be JSON JobMatchResponse string).
         """
         settings = get_settings()
@@ -249,11 +318,10 @@ class IGenticClient:
             logger.info("iGentic executor credentials not configured; match_jobs returning None.")
             return None
 
-        # Build payload shaped to match RULE 2
+        # Build payload shaped to match RULE 2 (candidate_profile only)
         payload: dict[str, Any] = {
             "job_match_request": {
                 "candidate_profile": candidate_profile,
-                "open_jobs": open_jobs,
             }
         }
         if candidate_id:
@@ -272,7 +340,7 @@ class IGenticClient:
         }
 
         headers = self._get_headers(session_id=None, accept="application/json")
-        timeout = httpx.Timeout(connect=5.0, read=25.0, write=5.0, pool=5.0)
+        timeout = httpx.Timeout(connect=15.0, read=90.0, write=15.0, pool=15.0)
 
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(settings.igentic_executor_url, json=body, headers=headers)
@@ -281,10 +349,7 @@ class IGenticClient:
                 raise RuntimeError(f"iGentic executor failed with HTTP {resp.status_code}: {resp.text}")
 
             data = resp.json()
-            result_text = data.get("Result") or data.get("result") or data.get("output") or resp.text
-            if isinstance(result_text, dict):
-                return json.dumps(result_text)
-            return str(result_text)
+            return self._extract_result_from_payload(data)
 
 
 igentic_client = IGenticClient()

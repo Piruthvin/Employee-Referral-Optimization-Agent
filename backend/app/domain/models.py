@@ -138,6 +138,7 @@ class ApprovalDetailResponse(BaseModel):
     candidate: dict[str, Any] = Field(default_factory=dict)
     parsed_profile: dict[str, Any] | None = None
     match_details: dict[str, Any] | None = None
+    best_match: dict[str, Any] | None = None
 
 
 class ApproveRejectRequest(BaseModel):
@@ -165,10 +166,12 @@ class JobMatchResult(BaseModel):
     job_id: str
     job_title: str
     match_percent: float
-    matched_skills: list[str]
-    missing_skills: list[str]
-    experience_fit: bool
+    matched_skills: list[str] = Field(default_factory=list)
+    missing_skills: list[str] = Field(default_factory=list)
+    experience_fit: bool = True
     department: str | None = None
+    job_description: str | None = None
+    notes: str | None = None
 
 
 class JobMatchResponse(BaseModel):
@@ -184,6 +187,7 @@ class JobOpeningItem(BaseModel):
     required_skills: list[str] = Field(default_factory=list)
     required_experience: float | None = None
     status: str
+    job_description: str | None = None
 
 
 class JobOpeningsResponse(BaseModel):
@@ -295,6 +299,9 @@ class ReferralTrendsResponse(BaseModel):
 class TopCandidatesResponse(BaseModel):
     role: str
     candidates: list[dict[str, Any]]
+    total_matching: int = 0
+    available_jobs: list[str] = Field(default_factory=list)
+    message: str | None = None
 
 
 # ── Chat Models ───────────────────────────────────────────────────────────────

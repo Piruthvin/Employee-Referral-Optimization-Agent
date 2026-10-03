@@ -4,6 +4,7 @@ Computes recruitment funnel metrics, approval turnaround, referral trends,
 and derived employee points purely from Zoho Recruit Candidate records.
 """
 
+import re
 from typing import Any
 from datetime import datetime, date
 from collections import defaultdict
@@ -233,30 +234,104 @@ class AnalyticsService:
         return ReferralTrendsResponse(periods=periods_data)
 
     async def get_top_candidates_by_role(self, role: str) -> TopCandidatesResponse:
-        """Finds top-scored candidates filtered by role or job title."""
+        """Finds top-scored candidates filtered by role or job title with fuzzy/token matching and open job recommendations."""
         candidates = await zoho_service.get_all_candidates_cached()
+        try:
+            open_jobs = await zoho_service.get_open_jobs()
+        except Exception:
+            open_jobs = []
+
+        available_jobs = [
+            j.get("Posting_Title") or j.get("Job_Title") or j.get("Job_Opening_Name")
+            for j in open_jobs
+            if (j.get("Posting_Title") or j.get("Job_Title") or j.get("Job_Opening_Name"))
+        ]
+
+        q_lower = role.strip().lower()
+        stop_words = {"the", "for", "role", "job", "position", "and", "or", "in", "of", "with", "top", "referrals", "candidates"}
+        tokens = [w for w in re.split(r"[\s,/_\-]+", q_lower) if len(w) > 1 and w not in stop_words]
+
         matching: list[dict[str, Any]] = []
 
-        query = role.strip().lower()
         for c in candidates:
             cand_title = (c.get("Current_Job_Title") or "").lower()
             skills_raw = str(c.get("Skill_Set") or "").lower()
+            skills_list = [s.strip() for s in skills_raw.split(",") if s.strip()]
 
-            if query in cand_title or query in skills_raw:
-                fn = c.get("First_Name") or ""
-                ln = c.get("Last_Name") or ""
-                matching.append({
-                    "candidate_id": str(c.get("id")),
-                    "name": f"{fn} {ln}".strip() or "Candidate",
-                    "email": c.get("Email"),
-                    "job_title": c.get("Current_Job_Title"),
-                    "referral_score": c.get("Referral_Score") or 0.0,
-                    "experience_years": c.get("Experience_in_Years"),
-                    "approval_status": c.get("Referral_Approval_Status") or "Pending",
-                })
+            matched_tokens: list[str] = []
+            base_score = 0.0
+
+            # 1. Exact phrase match in title or skills
+            if q_lower in cand_title or q_lower in skills_raw:
+                base_score += 40.0
+                matched_tokens.append(q_lower)
+
+            # 2. Token matches against skills or title
+            for token in tokens:
+                if token in cand_title:
+                    base_score += 25.0
+                    matched_tokens.append(token)
+                elif any(token == s or token in s for s in skills_list):
+                    base_score += 20.0
+                    matched_tokens.append(token)
+                elif token in ("engineer", "developer", "programmer") and (
+                    any(t in cand_title for t in ("engineer", "developer", "programmer"))
+                    or any(t in s for s in skills_list for t in ("fastapi", "python", "java", "react", ".net", "backend", "fullstack"))
+                ):
+                    base_score += 15.0
+                    matched_tokens.append(token)
+
+            if not matched_tokens:
+                continue
+
+            # Experience bonus
+            exp = c.get("Experience_in_Years") or 0
+            try:
+                exp_float = float(exp)
+                if "senior" in tokens and exp_float >= 5:
+                    base_score += 15.0
+                elif exp_float > 0:
+                    base_score += min(exp_float * 3.0, 15.0)
+            except Exception:
+                pass
+
+            existing_score = c.get("Referral_Score") or 0.0
+            try:
+                existing_score = float(existing_score)
+            except Exception:
+                existing_score = 0.0
+
+            final_score = max(existing_score, min(max(base_score, 45.0), 98.0))
+
+            fn = c.get("First_Name") or ""
+            ln = c.get("Last_Name") or ""
+            matching.append({
+                "candidate_id": str(c.get("id")),
+                "name": f"{fn} {ln}".strip() or "Candidate",
+                "email": c.get("Email"),
+                "job_title": c.get("Current_Job_Title") or (available_jobs[0] if available_jobs else role),
+                "referral_score": round(final_score, 1),
+                "experience_years": exp,
+                "matched_skills": [s for s in skills_list if any(t in s for t in tokens)][:5],
+                "approval_status": c.get("Referral_Approval_Status") or "Pending",
+            })
 
         matching.sort(key=lambda x: x["referral_score"], reverse=True)
-        return TopCandidatesResponse(role=role, candidates=matching[:15])
+
+        msg = None
+        if not matching:
+            if available_jobs:
+                msg = f"No candidate referrals currently match '{role}'. Open requisitions in Zoho: {', '.join(available_jobs)}."
+            else:
+                msg = f"No candidate referrals currently match '{role}' and no open requisitions found."
+
+        return TopCandidatesResponse(
+            role=role,
+            candidates=matching[:15],
+            total_matching=len(matching),
+            available_jobs=available_jobs,
+            message=msg,
+        )
 
     async def get_employee_points(self, employee_email: str) -> dict[str, Any]:
         """Calculates derived points for an employee purely from Zoho Candidates."""

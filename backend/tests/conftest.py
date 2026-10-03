@@ -29,6 +29,9 @@ os.environ["ZOHO_RECRUIT_BASE_URL"] = "https://recruit.zoho.in/recruit/v2"
 os.environ["MIN_ASSOCIATE_MATCH"] = "40"
 os.environ["POINTS_PER_REFERRAL"] = "10"
 os.environ["RESUME_PARSER_MODE"] = "auto"
+os.environ["JOB_MATCH_MODE"] = "auto"
+os.environ["IGENTIC_EXECUTOR_URL"] = ""
+os.environ["IGENTIC_APP_ID"] = ""
 
 from app.main import app
 from app.core.config import get_settings

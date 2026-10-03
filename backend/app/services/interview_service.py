@@ -218,7 +218,15 @@ class InterviewService:
                     join_url = data.get("joinWebUrl") or data.get("joinUrl")
                     if join_url:
                         return join_url
-                logger.error("Teams onlineMeetings failed HTTP %d: %s", resp.status_code, resp.text)
+                if resp.status_code in (401, 403):
+                    logger.error(
+                        "Teams onlineMeetings failed HTTP %d: %s. "
+                        "Configuration Issue: Teams meeting creation is not configured correctly for this tenant. "
+                        "MS_ORGANIZER_UPN ('%s') must be an active Microsoft 365 tenant mailbox, not an external or Gmail address.",
+                        resp.status_code, resp.text, settings.ms_organizer_upn,
+                    )
+                else:
+                    logger.error("Teams onlineMeetings failed HTTP %d: %s", resp.status_code, resp.text)
         except Exception as e:
             logger.error("Exception calling Graph onlineMeetings: %s", e)
 

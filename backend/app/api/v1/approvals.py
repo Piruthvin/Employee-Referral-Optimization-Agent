@@ -120,7 +120,7 @@ async def reject_referral_tool(
 )
 async def get_approval_detail(
     candidate_id: str,
-    current_user: dict[str, Any] = Depends(get_auth_or_agent_user),
+    current_user: dict[str, Any] = Depends(get_tool_user),
 ) -> ApprovalDetailResponse:
     _assert_recruiter_or_manager(current_user)
     return await approval_service.get_approval_detail(candidate_id)

@@ -66,22 +66,36 @@ class ReferralService:
             )
 
         # 3. Structure into JSON (Agent / Python with fallback)
-        parsed_resume, parser_used = await resume_parser_service.parse_resume(
-            clean_text,
-            candidate_email=candidate_email,
-            candidate_name=candidate_name,
-        )
+        try:
+            parsed_resume, parser_used = await resume_parser_service.parse_resume(
+                clean_text,
+                candidate_email=candidate_email,
+                candidate_name=candidate_name,
+            )
+        except Exception as parse_err:
+            logger.warning("Agent resume parsing failed: %s. Falling back to deterministic Python parser.", parse_err)
+            parsed_resume, parser_used = resume_parser_service._parse_with_python(clean_text)
 
 
         # 4. Job Matching Against Open Jobs (AI Agent first, Python fallback)
         open_jobs = await zoho_service.get_open_jobs()
-        job_matches, matcher_used = await job_match_service.rank_jobs_for_candidate_agent_first(
-            candidate_skills=parsed_resume.skills,
-            candidate_exp_years=parsed_resume.total_experience_years,
-            open_jobs=open_jobs,
-            candidate_profile=parsed_resume.model_dump(),
-            min_match=0,
-        )
+        try:
+            job_matches, matcher_used = await job_match_service.rank_jobs_for_candidate_agent_first(
+                candidate_skills=parsed_resume.skills,
+                candidate_exp_years=parsed_resume.total_experience_years,
+                open_jobs=open_jobs,
+                candidate_profile=parsed_resume.model_dump(),
+                min_match=0,
+            )
+        except Exception as jm_err:
+            logger.warning("Job matching agent call raised unexpected error: %s. Falling back to deterministic Python matcher.", jm_err)
+            job_matches = job_match_service.rank_jobs_for_candidate(
+                candidate_skills=parsed_resume.skills,
+                candidate_exp_years=parsed_resume.total_experience_years,
+                open_jobs=open_jobs,
+                min_match=0,
+            )
+            matcher_used = "python_fallback"
 
         best_match = job_matches[0] if job_matches else None
         referral_score = best_match["match_percent"] if best_match else None
@@ -124,9 +138,15 @@ class ReferralService:
         ]
         if job_matches:
             for jm in job_matches[:3]:
-                note_content_lines.append(f"• {jm['job_title']}: {jm['match_percent']}% match (Fit: {jm['experience_fit']})")
+                note_content_lines.append(f"• {jm['job_title']} ({jm['job_id']}): {jm['match_percent']}% match (Fit: {jm['experience_fit']})")
+                if jm.get("notes"):
+                    note_content_lines.append(f"  Why this match: {jm['notes']}")
         else:
             note_content_lines.append("No active open jobs found during referral.")
+
+        if best_match:
+            note_content_lines.append("\n=== Best Job Match JSON ===")
+            note_content_lines.append(json.dumps(best_match, indent=2))
 
         if has_mismatch and mismatch_details:
             note_content_lines.append(f"\n⚠️ IDENTITY MISMATCH WARNING:\n{mismatch_details}")
@@ -172,8 +192,14 @@ class ReferralService:
             "success": True,
             "candidate_id": candidate_id,
             "best_match": {
-                "job_title": best_match["job_title"] if best_match else "Unmatched",
-                "match_percent": best_match["match_percent"] if best_match else 0.0,
+                "job_id": best_match.get("job_id"),
+                "job_title": best_match.get("job_title", "Unmatched"),
+                "job_description": best_match.get("job_description", ""),
+                "match_percent": best_match.get("match_percent", 0.0),
+                "matched_skills": best_match.get("matched_skills", []),
+                "missing_skills": best_match.get("missing_skills", []),
+                "experience_fit": best_match.get("experience_fit", True),
+                "notes": best_match.get("notes"),
             } if best_match else None,
             "status": "Pending recruiter approval",
             "warnings": warnings,

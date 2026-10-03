@@ -96,16 +96,28 @@ class ApprovalService:
         """Retrieves full candidate detail, parsed profile from Zoho Notes, and match info."""
         cand = await zoho_service.get_candidate_by_id(candidate_id)
         if not cand:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found.")
+            if "@" in str(candidate_id):
+                cand = await zoho_service.search_candidate_by_email(str(candidate_id).strip())
+                if cand:
+                    candidate_id = str(cand.get("id", candidate_id))
+            if not cand:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found.")
 
-        # Read candidate notes to reconstruct parsed profile if available
+        # Read candidate notes to reconstruct parsed profile and best match if available
         notes = await zoho_service.get_candidate_notes(candidate_id)
         parsed_profile: dict[str, Any] | None = None
         has_mismatch = False
         mismatch_details: str | None = None
+        best_match_data: dict[str, Any] | None = None
 
         for n in notes:
             content = n.get("Note_Content") or ""
+            if "=== Best Job Match JSON ===" in content:
+                try:
+                    bm_str = content.split("=== Best Job Match JSON ===")[1].split("===")[0].strip()
+                    best_match_data = json.loads(bm_str)
+                except Exception:
+                    pass
             if "=== Full Parsed Profile JSON ===" in content:
                 try:
                     json_str = content.split("=== Full Parsed Profile JSON ===")[1].strip()
@@ -115,6 +127,24 @@ class ApprovalService:
             if "⚠️ IDENTITY MISMATCH WARNING:" in content:
                 has_mismatch = True
                 mismatch_details = content.split("⚠️ IDENTITY MISMATCH WARNING:")[1].split("===")[0].strip()
+
+        # If best_match_data not found in notes, compute from candidate profile/skills and open jobs
+        if not best_match_data:
+            skills_raw = (parsed_profile.get("skills") if parsed_profile else None) or cand.get("Skill_Set") or cand.get("Skills") or []
+            cand_skills = [str(s) for s in skills_raw] if isinstance(skills_raw, list) else [s.strip() for s in str(skills_raw).split(",") if s.strip()]
+            exp_val = (parsed_profile.get("total_experience_years") if parsed_profile else None) or cand.get("Experience_in_Years") or cand.get("Experience") or 0.0
+            try:
+                cand_exp = float(exp_val)
+            except (ValueError, TypeError):
+                cand_exp = 0.0
+
+            try:
+                open_jobs = await zoho_service.get_open_jobs()
+                ranked_jobs = job_match_service.rank_jobs_for_candidate(cand_skills, cand_exp, open_jobs)
+                if ranked_jobs:
+                    best_match_data = ranked_jobs[0]
+            except Exception as e:
+                logger.debug("Could not compute fallback match for candidate %s: %s", candidate_id, e)
 
         settings = get_settings()
         approval_status = (cand.get("Referral_Approval_Status") or "").strip()
@@ -163,6 +193,7 @@ class ApprovalService:
             candidate=cand,
             parsed_profile=parsed_profile,
             match_details=None,
+            best_match=best_match_data,
         )
 
     async def approve_referral(

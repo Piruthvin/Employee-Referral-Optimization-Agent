@@ -121,11 +121,20 @@ class EmailService:
         }
 
         async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.post(url, json={"message": message_payload, "saveToSentItems": "true"}, headers=headers)
+            resp = await client.post(url, headers=headers, json={"message": message_payload, "saveToSentItems": True})
             if resp.status_code in (200, 202):
                 logger.info("Email sent successfully via Microsoft Graph to %s", recipients)
                 return True
-            logger.error("Microsoft Graph sendMail failed HTTP %d: %s", resp.status_code, resp.text)
+            if resp.status_code in (401, 403):
+                logger.error(
+                    "Microsoft Graph sendMail failed HTTP %d: %s. "
+                    "Configuration Issue: Email sending is not configured correctly for this tenant. "
+                    "MS_SENDER_UPN ('%s') must be an active, licensed mailbox belonging to Microsoft 365 tenant '%s', "
+                    "not an external Gmail or third-party address.",
+                    resp.status_code, resp.text, settings.ms_sender_upn, settings.ms_tenant_id,
+                )
+            else:
+                logger.error("Microsoft Graph sendMail failed HTTP %d: %s", resp.status_code, resp.text)
             return False
 
     async def send_otp_email(self, to_email: str, otp: str) -> bool:

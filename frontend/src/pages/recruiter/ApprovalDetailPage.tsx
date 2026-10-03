@@ -44,6 +44,7 @@ export const ApprovalDetailPage: React.FC = () => {
   });
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [scheduleSuccessMsg, setScheduleSuccessMsg] = useState<string | null>(null);
+  const [jobDescExpanded, setJobDescExpanded] = useState(false);
 
   const fetchCandidate = async () => {
     if (!id) return;
@@ -421,6 +422,11 @@ export const ApprovalDetailPage: React.FC = () => {
                   <p className="text-sm font-bold text-stone-900 mt-0.5">
                     {candidate.best_match.job_title}
                   </p>
+                  {candidate.best_match.job_id && (
+                    <span className="inline-block mt-1 text-[11px] font-mono font-medium px-2 py-0.5 bg-stone-100 text-stone-600 rounded">
+                      Job ID: {candidate.best_match.job_id}
+                    </span>
+                  )}
                 </div>
 
                 <div className="w-full bg-stone-100 rounded-full h-2 overflow-hidden">
@@ -429,6 +435,41 @@ export const ApprovalDetailPage: React.FC = () => {
                     style={{ width: `${Math.min(100, candidate.best_match.match_percent)}%` }}
                   />
                 </div>
+
+                {/* Why this match notes */}
+                {candidate.best_match.notes && (
+                  <div className="p-3 bg-brand-50/70 border border-brand-200/80 rounded-xl">
+                    <label className="text-[11px] font-bold text-brand-900 uppercase tracking-wider block mb-1">
+                      ✨ Why this match:
+                    </label>
+                    <p className="text-xs text-brand-950 leading-relaxed font-medium">
+                      {candidate.best_match.notes}
+                    </p>
+                  </div>
+                )}
+
+                {/* Job Description with expand/collapse */}
+                {candidate.best_match.job_description && (
+                  <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl">
+                    <label className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider block mb-1">
+                      Role Description
+                    </label>
+                    <p className="text-xs text-stone-700 leading-relaxed whitespace-pre-wrap">
+                      {jobDescExpanded
+                        ? candidate.best_match.job_description
+                        : `${candidate.best_match.job_description.slice(0, 180)}${candidate.best_match.job_description.length > 180 ? '...' : ''}`}
+                    </p>
+                    {candidate.best_match.job_description.length > 180 && (
+                      <button
+                        type="button"
+                        onClick={() => setJobDescExpanded(!jobDescExpanded)}
+                        className="mt-1.5 text-xs font-semibold text-brand-700 hover:text-brand-800 transition cursor-pointer"
+                      >
+                        {jobDescExpanded ? 'Show less' : 'Read full description'}
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 {/* Matched Skills */}
                 <div>

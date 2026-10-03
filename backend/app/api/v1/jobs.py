@@ -4,9 +4,12 @@ Job openings and candidate matching endpoints:
 - POST /jobs/match (Tool Endpoint: ranks open jobs against a candidate's profile)
 """
 
+import logging
 from typing import Any
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, status
+
+logger = logging.getLogger(__name__)
 
 from app.core.dependencies import get_current_user, get_auth_or_agent_user, get_tool_user
 from app.services.zoho_service import zoho_service
@@ -34,6 +37,7 @@ async def _build_open_jobs_response() -> JobOpeningsResponse:
         req_skills = job_match_service.get_job_required_skills(j)
         req_exp = job_match_service.get_job_required_experience(j)
         title = j.get("Posting_Title") or j.get("Job_Title") or j.get("Job_Opening_Name") or "Job"
+        desc = j.get("Job_Description") or j.get("Job_Summary") or ""
 
         items.append(
             JobOpeningItem(
@@ -43,6 +47,7 @@ async def _build_open_jobs_response() -> JobOpeningsResponse:
                 required_skills=req_skills,
                 required_experience=req_exp,
                 status=j.get("Job_Opening_Status") or "Active",
+                job_description=desc,
             )
         )
 
@@ -114,21 +119,31 @@ async def match_jobs_for_candidate(
         cand_exp = 0.0
 
     open_jobs = await zoho_service.get_open_jobs()
-    ranked, matcher_used = await job_match_service.rank_jobs_for_candidate_agent_first(
-        candidate_skills=cand_skills,
-        candidate_exp_years=cand_exp,
-        open_jobs=open_jobs,
-        candidate_profile={
-            "candidate_id": str(cand.get("id")),
-            "full_name": f"{cand.get('First_Name', '')} {cand.get('Last_Name', '')}".strip(),
-            "email": cand.get("Email"),
-            "skills": cand_skills,
-            "total_experience_years": cand_exp,
-            "current_job_title": cand.get("Current_Job_Title"),
-        },
-        candidate_id=str(cand.get("id")),
-        min_match=req.min_match,
-    )
+    try:
+        ranked, matcher_used = await job_match_service.rank_jobs_for_candidate_agent_first(
+            candidate_skills=cand_skills,
+            candidate_exp_years=cand_exp,
+            open_jobs=open_jobs,
+            candidate_profile={
+                "candidate_id": str(cand.get("id")),
+                "full_name": f"{cand.get('First_Name', '')} {cand.get('Last_Name', '')}".strip(),
+                "email": cand.get("Email"),
+                "skills": cand_skills,
+                "total_experience_years": cand_exp,
+                "current_job_title": cand.get("Current_Job_Title"),
+            },
+            candidate_id=str(cand.get("id")),
+            min_match=req.min_match,
+        )
+    except Exception as e:
+        logger.warning("Agent job matching failed: %s. Falling back to deterministic Python matcher.", e)
+        ranked = job_match_service.rank_jobs_for_candidate(
+            candidate_skills=cand_skills,
+            candidate_exp_years=cand_exp,
+            open_jobs=open_jobs,
+            min_match=req.min_match,
+        )
+        matcher_used = "python_fallback"
 
     matches: list[JobMatchResult] = [
         JobMatchResult(
@@ -139,6 +154,8 @@ async def match_jobs_for_candidate(
             missing_skills=r["missing_skills"],
             experience_fit=r["experience_fit"],
             department=r.get("department"),
+            job_description=r.get("job_description"),
+            notes=r.get("notes"),
         )
         for r in ranked
     ]

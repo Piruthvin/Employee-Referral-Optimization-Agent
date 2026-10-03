@@ -25,6 +25,11 @@ export interface CandidateReferral {
     job_id?: string;
     job_title: string;
     match_percent: number;
+    job_description?: string;
+    notes?: string;
+    matched_skills?: string[];
+    missing_skills?: string[];
+    experience_fit?: boolean;
   };
 }
 
@@ -72,9 +77,11 @@ export interface CandidateDetail {
     };
   };
   best_match?: {
-    job_id: string;
+    job_id?: string;
     job_title: string;
     match_percent: number;
+    job_description?: string;
+    notes?: string;
     matched_skills?: string[];
     missing_skills?: string[];
     experience_fit?: boolean;

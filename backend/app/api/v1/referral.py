@@ -264,6 +264,34 @@ async def get_referral_by_id(
         )
 
     notes = await zoho_service.get_candidate_notes(candidate_id)
+    best_match_data: dict[str, Any] | None = None
+    for n in notes:
+        content = n.get("Note_Content") or ""
+        if "=== Best Job Match JSON ===" in content:
+            try:
+                bm_str = content.split("=== Best Job Match JSON ===")[1].split("===")[0].strip()
+                best_match_data = json.loads(bm_str)
+                break
+            except Exception:
+                pass
+
+    if not best_match_data:
+        skills_raw = cand.get("Skill_Set") or cand.get("Skills") or []
+        cand_skills = [str(s) for s in skills_raw] if isinstance(skills_raw, list) else [s.strip() for s in str(skills_raw).split(",") if s.strip()]
+        exp_val = cand.get("Experience_in_Years") or cand.get("Experience") or 0.0
+        try:
+            cand_exp = float(exp_val)
+        except (ValueError, TypeError):
+            cand_exp = 0.0
+
+        try:
+            open_jobs = await zoho_service.get_open_jobs()
+            ranked_jobs = job_match_service.rank_jobs_for_candidate(cand_skills, cand_exp, open_jobs)
+            if ranked_jobs:
+                best_match_data = ranked_jobs[0]
+        except Exception:
+            pass
+
     first_name = str(cand.get("First_Name") or "").strip()
     last_name = str(cand.get("Last_Name") or "").strip()
     name = f"{first_name} {last_name}".strip() or str(cand.get("Candidate_Name") or "Candidate").strip()
@@ -283,7 +311,7 @@ async def get_referral_by_id(
         approval_status=str(cand.get("Referral_Approval_Status") or "Pending").strip(),
         candidate_status=str(cand.get("Candidate_Status") or "New").strip(),
         referral_score=score,
-        best_match=None,
+        best_match=best_match_data,
         notes=notes,
     )
 

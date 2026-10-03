@@ -93,6 +93,7 @@ class ResumeParserService:
             raise ValueError(f"Expected JSON string or dict, got {type(raw_output).__name__}")
 
         cleaned = raw_output.strip()
+        cleaned = cleaned.replace("TERMINATE THE PROCESS", "").replace("TERMINATE", "").strip()
 
         # 1. Strip markdown code fences if present
         if "```" in cleaned:

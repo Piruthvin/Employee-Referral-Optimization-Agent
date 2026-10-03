@@ -263,3 +263,59 @@ async def test_agent_key_auth_re_derives_role(client, mock_zoho_active_users):
         headers_invalid = {"X-Agent-Key": "wrong-agent-key"}
         resp_inv = await client.get("/api/v1/approvals/pending?requester_email=recruiter@company.com", headers=headers_invalid)
         assert resp_inv.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_top_candidates_matching_and_helpful_fallback(client, recruiter_jwt):
+    """Test get_top_candidates_by_role token matching and available_jobs recommendations."""
+    from app.services.analytics_service import analytics_service
+
+    mock_candidates = [
+        {
+            "id": "CAND_101",
+            "First_Name": "Priya",
+            "Last_Name": "Sharma",
+            "Email": "priya@example.com",
+            "Current_Job_Title": None,
+            "Skill_Set": "Python, FastAPI, Docker, PostgreSQL, REST APIs",
+            "Experience_in_Years": 5,
+            "Referral_Approval_Status": "Approved",
+            "Referral_Score": 0.0,
+        },
+        {
+            "id": "CAND_102",
+            "First_Name": "Bob",
+            "Last_Name": "Jones",
+            "Email": "bob@example.com",
+            "Current_Job_Title": "Junior Frontend Developer",
+            "Skill_Set": "JavaScript, React, CSS",
+            "Experience_in_Years": 2,
+            "Referral_Approval_Status": "Pending",
+            "Referral_Score": 0.0,
+        }
+    ]
+    mock_jobs = [
+        {
+            "id": "JOB_999",
+            "Posting_Title": "Software Engineer",
+            "Job_Opening_Status": "In-progress",
+        }
+    ]
+
+    with patch.object(zoho_service, "get_all_candidates_cached", AsyncMock(return_value=mock_candidates)), \
+         patch.object(zoho_service, "get_open_jobs", AsyncMock(return_value=mock_jobs)):
+
+        # 1. Query for "Senior Python Engineer" matches Priya (Python + FastAPI + experience)
+        res_python = await analytics_service.get_top_candidates_by_role("Senior Python Engineer")
+        assert len(res_python.candidates) >= 1
+        assert res_python.candidates[0]["name"] == "Priya Sharma"
+        assert res_python.candidates[0]["referral_score"] >= 50
+        assert "Software Engineer" in res_python.available_jobs
+
+        # 2. Query for non-existent role "Nurse" returns empty candidates with available_jobs and actionable message
+        res_nurse = await analytics_service.get_top_candidates_by_role("Nurse")
+        assert len(res_nurse.candidates) == 0
+        assert res_nurse.total_matching == 0
+        assert "Software Engineer" in res_nurse.available_jobs
+        assert "Software Engineer" in res_nurse.message
+        assert "No candidate referrals currently match 'Nurse'" in res_nurse.message

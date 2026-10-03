@@ -14,7 +14,11 @@ interface ReferralResult {
   best_match?: {
     job_id?: string;
     job_title: string;
+    job_description?: string;
     match_percent: number;
+    notes?: string;
+    matched_skills?: string[];
+    missing_skills?: string[];
   };
   status: string;
   message?: string;
@@ -29,6 +33,7 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, onClose, o
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [result, setResult] = useState<ReferralResult | null>(null);
+  const [descExpanded, setDescExpanded] = useState(false);
 
   if (!isOpen) return null;
 
@@ -176,22 +181,64 @@ export const ReferralModal: React.FC<ReferralModalProps> = ({ isOpen, onClose, o
                 </div>
 
                 {result.best_match ? (
-                  <div>
-                    <div className="flex justify-between items-center text-sm mb-1">
-                      <span className="text-neutral-500 font-medium">Best Matching Role</span>
-                      <span className="font-semibold text-brand-700">
-                        {result.best_match.match_percent}% Match
-                      </span>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="flex justify-between items-center text-sm mb-1">
+                        <span className="text-neutral-500 font-medium">Best Matching Role</span>
+                        <span className="font-semibold text-brand-700">
+                          {result.best_match.match_percent}% Match
+                        </span>
+                      </div>
+                      <div className="text-sm font-bold text-neutral-900">
+                        {result.best_match.job_title}
+                      </div>
+                      {result.best_match.job_id && (
+                        <div className="text-[11px] font-mono text-neutral-500 mt-0.5">
+                          Job ID: {result.best_match.job_id}
+                        </div>
+                      )}
+                      <div className="w-full bg-neutral-200 rounded-full h-2 mt-2 overflow-hidden">
+                        <div
+                          className="bg-brand-700 h-2 rounded-full transition-all duration-500"
+                          style={{ width: `${Math.min(100, result.best_match.match_percent)}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="text-sm font-bold text-neutral-900">
-                      {result.best_match.job_title}
-                    </div>
-                    <div className="w-full bg-neutral-200 rounded-full h-2 mt-2 overflow-hidden">
-                      <div
-                        className="bg-brand-700 h-2 rounded-full transition-all duration-500"
-                        style={{ width: `${Math.min(100, result.best_match.match_percent)}%` }}
-                      />
-                    </div>
+
+                    {/* Why this match notes */}
+                    {result.best_match.notes && (
+                      <div className="p-3 bg-brand-50/70 border border-brand-200/80 rounded-xl text-left">
+                        <span className="text-[11px] font-bold text-brand-900 uppercase tracking-wider block">
+                          ✨ Why this match:
+                        </span>
+                        <p className="text-xs text-brand-950 mt-1 leading-relaxed font-medium">
+                          {result.best_match.notes}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Job Description with expand/collapse */}
+                    {result.best_match.job_description && (
+                      <div className="p-3 bg-white border border-neutral-200 rounded-xl text-left">
+                        <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider block mb-1">
+                          Role Description
+                        </span>
+                        <p className="text-xs text-neutral-700 leading-relaxed whitespace-pre-line">
+                          {descExpanded
+                            ? result.best_match.job_description
+                            : `${result.best_match.job_description.slice(0, 160)}${result.best_match.job_description.length > 160 ? '...' : ''}`}
+                        </p>
+                        {result.best_match.job_description.length > 160 && (
+                          <button
+                            type="button"
+                            onClick={() => setDescExpanded(!descExpanded)}
+                            className="mt-1 text-xs font-semibold text-brand-700 hover:text-brand-800 transition cursor-pointer"
+                          >
+                            {descExpanded ? 'Show less' : 'Read full description'}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="text-xs text-neutral-500 italic">
